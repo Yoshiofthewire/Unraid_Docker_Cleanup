@@ -174,3 +174,186 @@ test_validate_only_reports_invalid_config() {
   status=$?
   assert_status "$status" 1
 }
+
+# --- Regression coverage added after adversarial review ---
+
+test_custom_cron_trailing_comma_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="1,2, 3 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_leading_comma_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON=",1,2 3 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_doubled_comma_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="1,,2 3 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_multi_hyphen_range_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 1-5-9 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_reversed_range_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 5-2 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_range_missing_lower_bound_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 -5 * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_range_missing_upper_bound_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 5- * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_step_zero_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="*/0 * * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_step_too_large_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="*/60 * * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_integer_overflow_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="18446744073709551616 * * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_preset_minute_integer_overflow_is_rejected() {
+  write_cfg SCHEDULE=daily MINUTE=18446744073709551616
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_over_long_custom_expression_is_rejected() {
+  local long_field="" i
+  for i in $(seq 1 100); do
+    long_field+="$(( i % 60 )),"
+  done
+  long_field="${long_field%,}"
+  write_cfg SCHEDULE=custom CUSTOM_CRON="$long_field * * * *"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_day_of_week_seven_is_accepted() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 3 * * 7"
+  cron_apply
+  assert_eq "$(cron_schedule)" "0 3 * * 7"
+}
+
+test_custom_cron_day_of_week_eight_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 3 * * 8"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_leading_zero_is_accepted_and_preserved() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="08 3 * * *"
+  cron_apply
+  assert_eq "$(cron_schedule)" "08 3 * * *"
+}
+
+test_custom_cron_empty_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON=""
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_whitespace_only_is_rejected() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="   "
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_validate_only_rejects_missing_cfg_file() {
+  local status
+  cron_apply --validate-only --cfg "$TMP/does-not-exist.cfg" >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+# --- Accept-case regressions: the fixes above must not start rejecting
+# valid expressions. ---
+
+test_custom_cron_range_with_step_is_accepted() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="1-10/2 * * * *"
+  cron_apply
+  assert_eq "$(cron_schedule)" "1-10/2 * * * *"
+}
+
+test_custom_cron_wildcard_step_is_accepted() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="*/15 * * * *"
+  cron_apply
+  assert_eq "$(cron_schedule)" "*/15 * * * *"
+}
+
+test_custom_cron_sunday_zero_is_accepted() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="0 3 * * 0"
+  cron_apply
+  assert_eq "$(cron_schedule)" "0 3 * * 0"
+}
+
+test_custom_cron_all_wildcards_is_accepted() {
+  write_cfg SCHEDULE=custom CUSTOM_CRON="* * * * *"
+  cron_apply
+  assert_eq "$(cron_schedule)" "* * * * *"
+}
+
+test_write_failure_is_reported_not_swallowed() {
+  write_cfg SCHEDULE=daily
+  chmod 555 "$BOOT_CONFIG"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  chmod 755 "$BOOT_CONFIG"
+  assert_status "$status" 1
+}
