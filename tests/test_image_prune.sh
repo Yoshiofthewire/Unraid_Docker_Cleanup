@@ -113,3 +113,15 @@ test_lock_prevents_a_concurrent_run() {
   assert_contains "$out" "already in progress"
   assert_not_contains "$(stub_log)" "image prune"
 }
+
+test_lock_collision_writes_lastrun_skipped() {
+  write_cfg
+  # Hold the lock in a background process, then try to run.
+  exec 8>"$LOCK_FILE"
+  flock -n 8 || fail "could not take the lock for the test"
+  prune >/dev/null 2>&1
+  exec 8>&-
+  assert_file_exists "$LASTRUN_FILE"
+  assert_eq "$(lastrun_field 2)" "skipped"
+  assert_contains "$(lastrun_field 3)" "already in progress"
+}

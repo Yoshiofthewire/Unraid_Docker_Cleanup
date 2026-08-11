@@ -24,6 +24,7 @@ main() {
   if ! flock -n 9; then
     echo "Another cleanup run is already in progress; skipping."
     log_line "skipped: another run in progress"
+    write_lastrun "skipped" "Another cleanup run already in progress"
     return 0
   fi
 
