@@ -19,9 +19,14 @@ volume_size() { # docker-root name
     printf '%s' "-1"
     return 0
   fi
-  local bytes
+  if [[ ! -r "$path" || ! -x "$path" ]]; then
+    printf '%s' "-1"
+    return 0
+  fi
+  local bytes status
   bytes="$(du -sb "$path" 2>/dev/null | awk '{print $1}')"
-  if [[ "$bytes" =~ ^[0-9]+$ ]]; then
+  status=$?
+  if [[ "$status" -eq 0 && "$bytes" =~ ^[0-9]+$ ]]; then
     printf '%s' "$bytes"
   else
     printf '%s' "-1"

@@ -53,11 +53,26 @@ test_flags_named_volumes() {
   assert_eq "$(volume_list | awk -F'\t' '{print $3}')" "no"
 }
 
-test_unreadable_volume_reports_minus_one() {
+test_missing_volume_directory_reports_minus_one() {
   export STUB_DANGLING="ghost_volume"
   export STUB_DOCKER_ROOT="$TMP/dockerroot"
   mkdir -p "$TMP/dockerroot/volumes"
   assert_eq "$(volume_list | awk -F'\t' '{print $2}')" "-1"
+}
+
+test_permission_denied_volume_reports_minus_one() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    echo "SKIP: running as root, directory permission bits are not enforced" >&2
+    return 0
+  fi
+  export STUB_DANGLING="locked_volume"
+  make_volume locked_volume 4096
+  local dir="$TMP/dockerroot/volumes/locked_volume"
+  chmod 000 "$dir"
+  local bytes
+  bytes="$(volume_list | awk -F'\t' '{print $2}')"
+  chmod 755 "$dir"
+  assert_eq "$bytes" "-1"
 }
 
 test_empty_when_nothing_is_dangling() {
