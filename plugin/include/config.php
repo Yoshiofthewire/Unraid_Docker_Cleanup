@@ -54,11 +54,20 @@ function dc_csrf_ok(): bool {
     if (empty($var['csrf_token'])) {
         return false;   // fail closed
     }
-    $token = (string)($_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '');
+    // The token must only ever be read from the POST body: accepting it from
+    // the query string would let it leak into logs, history, and Referer.
+    $posted = $_POST['csrf_token'] ?? '';
+    $token = is_string($posted) ? $posted : '';
     return hash_equals((string)$var['csrf_token'], $token);
 }
 
 function dc_require_csrf(): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        http_response_code(405);
+        header('Content-Type: text/plain');
+        header('Allow: POST');
+        exit("Method Not Allowed: POST required\n");
+    }
     if (!dc_csrf_ok()) {
         http_response_code(403);
         header('Content-Type: text/plain');

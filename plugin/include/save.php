@@ -10,13 +10,22 @@ header('Content-Type: text/plain; charset=utf-8');
 
 $cfg = dc_read_cfg();
 foreach (array_keys(dc_defaults()) as $key) {
-    if (isset($_POST[$key])) {
-        $cfg[$key] = (string)$_POST[$key];
+    if (isset($_POST[$key]) && is_string($_POST[$key])) {
+        $cfg[$key] = $_POST[$key];
     }
 }
 
-$tmp = "$cfgFile.tmp";
+// A unique temp file (not a fixed "$cfgFile.tmp" path) so two concurrent
+// saves can never interleave and let one request's rename() commit the
+// other request's unvalidated content.
+$tmp = tempnam(dirname($cfgFile), '.dc-cfg-');
+if ($tmp === false) {
+    http_response_code(500);
+    exit("Could not create a temporary configuration file.\n");
+}
+
 if (!dc_write_cfg($cfg, $tmp)) {
+    @unlink($tmp);
     http_response_code(500);
     exit("Could not write the configuration file.\n");
 }

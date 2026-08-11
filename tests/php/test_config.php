@@ -62,11 +62,19 @@ check('human bytes formats MB', dc_human_bytes(2097152) === '2MB');
 check('human bytes handles zero', dc_human_bytes(0) === '0B');
 check('human bytes handles unknown', dc_human_bytes(-1) === 'unknown');
 
-// CSRF must fail closed when no token is available.
+// CSRF must fail closed when no token is configured at all (no var.ini in
+// this container, and $var left untouched).
 $_POST = [];
-check('csrf fails with no token', dc_csrf_ok() === false);
+check('csrf fails with no token configured', dc_csrf_ok() === false);
+
+// Once a token is configured, the comparison itself must actually run.
+$var = ['csrf_token' => 'right'];
+$_POST = [];
+check('csrf fails when POST carries no token', dc_csrf_ok() === false);
 $_POST['csrf_token'] = 'wrong';
 check('csrf fails with a wrong token', dc_csrf_ok() === false);
+$_POST['csrf_token'] = 'right';
+check('csrf succeeds with a matching token', dc_csrf_ok() === true);
 
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

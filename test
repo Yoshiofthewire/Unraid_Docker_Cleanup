@@ -7,8 +7,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT" || exit 1
 status=0
 
-if [[ "${SKIP_LINT:-0}" != "1" ]]; then
-  if command -v docker >/dev/null 2>&1; then
+if command -v docker >/dev/null 2>&1; then
+  if [[ "${SKIP_LINT:-0}" != "1" ]]; then
     echo "== shellcheck =="
     mapfile -t sh_files < <(
       find plugin tests build -type f -name '*.sh' 2>/dev/null
@@ -21,14 +21,16 @@ if [[ "${SKIP_LINT:-0}" != "1" ]]; then
     while IFS= read -r php_file; do
       docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli php -l "$php_file" || status=1
     done < <(find plugin -type f -name '*.php' 2>/dev/null)
-
-    echo "== php tests =="
-    docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli \
-      php tests/php/test_config.php || status=1
-  else
-    echo "docker not found — lint requires Docker or SKIP_LINT=1" >&2
-    status=1
   fi
+
+  # Not lint: real unit tests. They need Docker, so they stay in this
+  # branch, but they run regardless of SKIP_LINT.
+  echo "== php tests =="
+  docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli \
+    php tests/php/test_config.php || status=1
+elif [[ "${SKIP_LINT:-0}" != "1" ]]; then
+  echo "docker not found — lint requires Docker or SKIP_LINT=1" >&2
+  status=1
 fi
 
 echo "== unit tests =="
