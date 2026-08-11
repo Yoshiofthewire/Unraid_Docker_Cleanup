@@ -8,7 +8,11 @@
 <!ENTITY repo      "https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup">
 <!ENTITY gitURL    "&repo;/releases/download/&version;">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/Yoshiofthewire/Unraid_Docker_Cleanup/main/&name;.plg">
-<!ENTITY pkgName   "&name;-&version;.txz">
+<!-- Slackware tooling derives a package's base name by stripping the last
+     three dash-separated fields (version, arch, build); a two-field name
+     does not supply that, so the arch/build suffix is required here. -->
+<!ENTITY pkgBase   "&name;-&version;-x86_64-1">
+<!ENTITY pkgName   "&pkgBase;.txz">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 ]>
@@ -65,7 +69,9 @@ else
   [ -x /usr/local/emhttp/webGui/scripts/update_cron ] &amp;&amp; /usr/local/emhttp/webGui/scripts/update_cron
 fi
 
-removepkg &name; 2>/dev/null
+# Remove by the full registered package name, not the bare plugin name —
+# that is what upgradepkg actually registered under /var/log/packages.
+removepkg &pkgBase; 2>/dev/null
 rm -rf &emhttp;
 rm -f /var/log/docker-cleanup.log
 rm -f &plgPATH;/&name;-*.txz
