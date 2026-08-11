@@ -24,6 +24,17 @@ volume_bytes() { # docker-root name
   [[ "$bytes" =~ ^[0-9]+$ ]] && printf '%s' "$bytes" || printf '0'
 }
 
+# A rejected argument is, by definition, unvalidated — it may be arbitrary
+# bytes, including a newline crafted to look like a separate line of this
+# script's own output (e.g. a forged "REMOVED <name>" line fed to Task 7's
+# parser). Strip anything that isn't a legal name character before it is
+# ever echoed back.
+sanitize_for_display() { # arbitrary string
+  local s="$1"
+  s="${s//[^A-Za-z0-9_.-]/}"
+  printf '%s' "$s"
+}
+
 main() {
   load_cfg
 
@@ -39,24 +50,41 @@ main() {
 
   # Re-taken at confirm time, not reused from the preview. A container that
   # started while the dialog was open must not lose its volume.
-  local unused
+  local unused unused_status
   unused="$(docker volume ls -q --filter dangling=true 2>/dev/null)"
+  unused_status=$?
+  if (( unused_status != 0 )); then
+    echo "Docker is not running." >&2
+    return 1
+  fi
 
   local root name total=0
   local -a keep=()
+  local -A seen=() vol_bytes=()
   root="$(docker_root)"
 
+  local seen_key
   for name in "$@"; do
-    if [[ ! "$name" =~ $VALID_NAME ]]; then
-      echo "REJECTED $name (invalid name)"
+    # A caller (the web layer, or anything replaying its request) may repeat
+    # a name. Process each distinct name once so it cannot be double-counted
+    # in TOTAL or double-passed to `docker volume rm`. Prefixed so an empty
+    # argument doesn't produce an empty (invalid) array subscript.
+    seen_key="n:$name"
+    if [[ -n "${seen[$seen_key]+x}" ]]; then
       continue
     fi
-    if ! printf '%s\n' "$unused" | grep -qxF -- "$name"; then
+    seen[$seen_key]=1
+
+    if [[ ! "$name" =~ $VALID_NAME ]]; then
+      echo "REJECTED $(sanitize_for_display "$name") (invalid name)"
+      continue
+    fi
+    if ! grep -qxF -- "$name" <<<"$unused"; then
       echo "SKIPPED $name (in use)"
       continue
     fi
     keep+=("$name")
-    total=$(( total + $(volume_bytes "$root" "$name") ))
+    vol_bytes["$name"]="$(volume_bytes "$root" "$name")"
   done
 
   if (( ${#keep[@]} == 0 )); then
@@ -73,13 +101,29 @@ main() {
 
   if (( status != 0 )); then
     printf '%s\n' "$output"
-    echo "TOTAL 0B"
+    # A batch `docker volume rm` can remove some operands before failing on
+    # another — e.g. a container claimed one mid-run. Do not assume the
+    # whole batch failed: re-check what is actually still there rather than
+    # reporting a single all-or-nothing result.
+    local remaining remaining_status
+    remaining="$(docker volume ls -q 2>/dev/null)"
+    remaining_status=$?
+    for name in "${keep[@]}"; do
+      if (( remaining_status == 0 )) && ! grep -qxF -- "$name" <<<"$remaining"; then
+        echo "REMOVED $name"
+        total=$(( total + vol_bytes["$name"] ))
+      else
+        echo "SKIPPED $name (in use)"
+      fi
+    done
+    echo "TOTAL $(human_bytes "$total")"
     log_line "volume prune failed with exit $status"
     return 1
   fi
 
   for name in "${keep[@]}"; do
     echo "REMOVED $name"
+    total=$(( total + vol_bytes["$name"] ))
   done
   echo "TOTAL $(human_bytes "$total")"
   log_line "volume prune removed ${#keep[@]} volume(s), $(human_bytes "$total"): ${keep[*]}"
