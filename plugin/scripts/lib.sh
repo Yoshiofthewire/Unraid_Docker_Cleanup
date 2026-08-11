@@ -78,7 +78,12 @@ notify_user() { # subject detail [normal|warning]
 
 write_lastrun() { # status message
   mkdir -p "$(dirname "$LASTRUN_FILE")"
-  printf '%s|%s|%s\n' "$(date -Iseconds)" "$1" "$2" > "$LASTRUN_FILE"
+  local status message
+  # Replace newlines/carriage returns with spaces
+  status="$(printf '%s' "$1" | tr '\n\r' '  ')"
+  status="${status//|/}"            # strip pipes from status (field 2)
+  message="$(printf '%s' "$2" | tr '\n\r' '  ')"
+  printf '%s|%s|%s\n' "$(date -Iseconds)" "$status" "$message" > "$LASTRUN_FILE"
 }
 
 docker_available() {

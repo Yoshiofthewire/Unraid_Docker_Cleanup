@@ -82,6 +82,44 @@ test_write_lastrun_uses_three_pipe_fields() {
   assert_eq "$fields" "3"
 }
 
+test_write_lastrun_strips_newlines_from_message() {
+  lib
+  write_lastrun "ok" "Line 1
+Line 2
+Line 3"
+  local line_count
+  line_count="$(wc -l < "$LASTRUN_FILE")"
+  assert_eq "$line_count" "1"
+  local content
+  content="$(cat "$LASTRUN_FILE")"
+  assert_contains "$content" "Line 1 Line 2 Line 3"
+}
+
+test_write_lastrun_preserves_pipe_in_message() {
+  lib
+  write_lastrun "ok" "Path: /foo|bar|baz or image|tag"
+  local line
+  line="$(cat "$LASTRUN_FILE")"
+  # Verify format: timestamp|status|message with pipes in message
+  # Extract first field (timestamp) to verify format
+  local timestamp
+  timestamp="${line%%|*}"
+  [[ -n "$timestamp" ]] || fail "missing timestamp"
+  # Verify the message with pipes is preserved intact
+  assert_contains "$line" "Path: /foo|bar|baz or image|tag"
+}
+
+test_write_lastrun_strips_pipe_from_status() {
+  lib
+  write_lastrun "ok|error" "message"
+  local line
+  line="$(cat "$LASTRUN_FILE")"
+  local fields
+  fields="$(awk -F'|' '{print NF}' "$LASTRUN_FILE")"
+  assert_eq "$fields" "3"
+  assert_contains "$line" "|okerror|"
+}
+
 test_notify_user_calls_notify_binary() {
   lib
   NOTIFY="yes"
