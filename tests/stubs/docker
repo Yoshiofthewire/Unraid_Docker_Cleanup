@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Stub docker. Records its arguments and returns canned output. Behaviour is
+# driven entirely by STUB_* environment variables.
+printf 'docker %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+
+case "${1:-}" in
+  info)
+    if [[ "${STUB_DOCKER_INFO_STATUS:-0}" != "0" ]]; then
+      echo "Cannot connect to the Docker daemon" >&2
+      exit "${STUB_DOCKER_INFO_STATUS}"
+    fi
+    if [[ "${2:-}" == "--format" ]]; then
+      printf '%s\n' "${STUB_DOCKER_ROOT:-/var/lib/docker}"
+    fi
+    exit 0
+    ;;
+  image)
+    if [[ "${STUB_IMAGE_PRUNE_STATUS:-0}" != "0" ]]; then
+      echo "Error response from daemon: conflict" >&2
+      exit "${STUB_IMAGE_PRUNE_STATUS}"
+    fi
+    printf 'Deleted Images:\nuntagged: example/app:latest\n\nTotal reclaimed space: %s\n' \
+      "${STUB_RECLAIMED:-4.509GB}"
+    exit 0
+    ;;
+  volume)
+    case "${2:-}" in
+      ls)
+        printf '%s' "${STUB_DANGLING:-}" | grep -v '^[[:space:]]*$'
+        exit 0
+        ;;
+      rm)
+        if [[ "${STUB_VOLUME_RM_STATUS:-0}" != "0" ]]; then
+          echo "Error response from daemon: volume is in use" >&2
+          exit "${STUB_VOLUME_RM_STATUS}"
+        fi
+        shift 2
+        for arg in "$@"; do
+          [[ "$arg" == "--" ]] && continue
+          printf '%s\n' "$arg"
+        done
+        exit 0
+        ;;
+    esac
+    ;;
+esac
+
+echo "stub docker: unhandled invocation: $*" >&2
+exit 99

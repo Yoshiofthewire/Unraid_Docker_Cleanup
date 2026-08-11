@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Single entry point: lint, then unit tests.
+# Lint runs in Docker so nothing has to be installed on the dev machine.
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT" || exit 1
+status=0
+
+if [[ "${SKIP_LINT:-0}" != "1" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    echo "== shellcheck =="
+    mapfile -t sh_files < <(
+      find plugin tests build -type f -name '*.sh' 2>/dev/null
+      printf '%s\n' test tests/stubs/docker tests/stubs/notify tests/stubs/update_cron
+    )
+    docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt koalaman/shellcheck:stable \
+      --shell=bash --external-sources "${sh_files[@]}" || status=1
+
+    echo "== php -l =="
+    while IFS= read -r php_file; do
+      docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli php -l "$php_file" || status=1
+    done < <(find plugin -type f -name '*.php' 2>/dev/null)
+  else
+    echo "docker not found — skipping lint" >&2
+  fi
+fi
+
+echo "== unit tests =="
+bash tests/run.sh "$@" || status=1
+
+exit "$status"

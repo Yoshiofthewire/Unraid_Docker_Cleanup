@@ -1,0 +1,4 @@
+release/
+*.txz
+*.txz.md5
+.DS_Store
