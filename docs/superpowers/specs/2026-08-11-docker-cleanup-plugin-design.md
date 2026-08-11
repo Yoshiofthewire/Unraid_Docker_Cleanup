@@ -30,14 +30,16 @@ confirmation-gated button to delete unused Docker volumes.
 ```
 /usr/local/emhttp/plugins/docker.cleanup/     RAM, recreated from .txz each boot
     DockerCleanup.page                        settings page
-    include/config.php                        read/write cfg, cron generation, shared helpers
+    include/config.php                        cfg read/write, CSRF check, shared PHP helpers
     include/save.php                          POST: save settings, rebuild cron
     include/run.php                           POST: manual image prune, streams output
-    include/volumes.php                       GET list unused volumes / POST remove selected
+    include/volumes.php                       POST: list unused volumes / remove selected
+    scripts/lib.sh                            paths, cfg loading, logging, notification
+    scripts/cron-apply.sh                     validate cfg, write cron fragment, update_cron
     scripts/image-prune.sh                    what cron runs
-    scripts/volume-prune.sh                   removes an explicit list of volumes
+    scripts/volume-list.sh                    lists unused volumes as TSV
+    scripts/volume-prune.sh                   re-validates and removes an explicit list
     default.cfg
-    images/docker-cleanup.png
 
 /boot/config/plugins/docker.cleanup/          flash, survives reboot and reinstall
     docker.cleanup.cfg                        user settings
@@ -132,9 +134,12 @@ so a manual test exercises exactly what runs on schedule.
 5. Append the full output to `/var/log/docker-cleanup.log`. If the log exceeds
    1 MB, keep the tail.
 6. Write one pipe-delimited line to `/boot/config/plugins/docker.cleanup/lastrun`:
-   `2026-08-11T03:00:04-05:00|ok|4509715046|Reclaimed 4.2 GB`. This is one small
-   flash write per run, so the settings page can still show the last result
-   after a reboot.
+   `2026-08-11T03:00:04-05:00|ok|Reclaimed 4.509GB`, i.e.
+   `timestamp|status|message` where status is `ok`, `error`, or `skipped`. The
+   message carries Docker's own human-readable size string rather than a byte
+   count, so nothing has to re-parse Docker's unit formatting. This is one
+   small flash write per run, so the settings page can still show the last
+   result after a reboot.
 7. If `NOTIFY=yes`, call
    `/usr/local/emhttp/webGui/scripts/notify -e "Docker Cleanup" -s <subject> -d <detail> -i <normal|warning>`.
    Success is `normal`; a non-zero exit from Docker is `warning`.
@@ -157,26 +162,36 @@ on every Docker version.
 Flow:
 
 1. User clicks "Prune unused volumes".
-2. `include/volumes.php?action=list` runs
-   `docker system df -v --format '{{json .Volumes}}'` and returns every volume
-   with `RefCount == 0`, each tagged `anonymous` when the name matches
-   `^[0-9a-f]{64}$`, with its size.
+2. `scripts/volume-list.sh` runs `docker volume ls -q --filter dangling=true`
+   to get every volume no container references, sizes each with
+   `du -sb <DockerRootDir>/volumes/<name>`, and tags a volume `anonymous` when
+   its name matches `^[0-9a-f]{64}$`. It emits TSV
+   (`name<TAB>bytes<TAB>anonymous`); `include/volumes.php` turns that into
+   JSON for the page. The `dangling` filter and `du` are stable across every
+   Docker version Unraid ships, and neither needs a JSON parser — Unraid has
+   no `jq`. A volume whose directory cannot be read reports size `-1`,
+   displayed as "unknown".
 3. The dialog lists every unused volume with its size and warns that deletion
    is permanent. Anonymous volumes are selected; named volumes are listed but
    greyed out and excluded until the user ticks "include named volumes", which
    is **unchecked by default**. Only selected volumes are sent in step 4.
 4. On confirm, the page POSTs the explicit list of volume names.
-5. `include/volumes.php` re-validates before deleting: each name must match
-   `^[A-Za-z0-9][A-Za-z0-9_.-]*$`, and must still report `RefCount == 0`. A
-   volume that gained a reference between preview and confirm is skipped and
-   reported. This closes the window where a container starts mid-dialog.
+5. `scripts/volume-prune.sh` re-validates before deleting: each name must match
+   `^[A-Za-z0-9][A-Za-z0-9_.-]*$`, and must still appear in a freshly taken
+   `docker volume ls -q --filter dangling=true`. A volume that gained a
+   reference between preview and confirm is skipped and reported. This closes
+   the window where a container starts mid-dialog.
 6. `scripts/volume-prune.sh` runs `docker volume rm -- <names>`, logs the
    result, and the page reports what was removed, what was skipped, and the
    space reclaimed.
 
 ## Web UI
 
-`DockerCleanup.page` with `Menu="Utilities"`, `Title="Docker Cleanup"`.
+`DockerCleanup.page` with `Menu="Utilities"`, `Title="Docker Cleanup"`, and
+`Icon="fa-recycle"` — a Font Awesome icon the webGui already ships, so no image
+file has to be packaged and the menu entry can never render broken. The
+Community Applications listing needs an icon by URL; that PNG lives at
+`images/docker-cleanup.png` in the repository and is not packaged.
 
 - Enable cleanup: yes/no
 - Schedule: preset dropdown; time, day-of-week, day-of-month, and custom cron
@@ -271,8 +286,12 @@ this repository so edits reach existing installs, matching the pattern in
   `/usr/local/emhttp/webGui/scripts/update_cron` on both 6.12 and 7.x. The
   scripts check for it and fail loudly with a clear message rather than
   silently doing nothing.
-- `docker system df -v --format` output shape varies across Docker versions.
-  The volume listing parses defensively and reports a clear error rather than
-  guessing when the shape is unrecognized.
+- `du -sb` on a volume directory can be slow for a very large volume. It only
+  runs on demand, when the user opens the volume dialog, never on a schedule.
+  A volume directory that cannot be read reports size `-1` rather than failing
+  the whole listing.
+- All decision logic lives in the shell scripts, which the test suite covers.
+  The PHP layer stays thin — CSRF check, argument marshalling, and formatting —
+  precisely because PHP is the part this repository cannot test as thoroughly.
 - At boot, Docker may not be up when cron fires. The `docker info` guard makes
   that a logged skip, not a failure.
