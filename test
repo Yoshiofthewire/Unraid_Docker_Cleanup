@@ -15,7 +15,7 @@ if [[ "${SKIP_LINT:-0}" != "1" ]]; then
       printf '%s\n' test tests/stubs/docker tests/stubs/notify tests/stubs/update_cron
     )
     docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt koalaman/shellcheck:stable \
-      --shell=bash --external-sources "${sh_files[@]}" || status=1
+      --shell=bash --external-sources -P SCRIPTDIR "${sh_files[@]}" || status=1
 
     echo "== php -l =="
     while IFS= read -r php_file; do
