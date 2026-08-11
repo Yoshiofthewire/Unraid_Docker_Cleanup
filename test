@@ -22,7 +22,8 @@ if [[ "${SKIP_LINT:-0}" != "1" ]]; then
       docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli php -l "$php_file" || status=1
     done < <(find plugin -type f -name '*.php' 2>/dev/null)
   else
-    echo "docker not found — skipping lint" >&2
+    echo "docker not found — lint requires Docker or SKIP_LINT=1" >&2
+    status=1
   fi
 fi
 

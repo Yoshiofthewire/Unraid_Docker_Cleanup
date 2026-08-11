@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stub docker. Records its arguments and returns canned output. Behaviour is
 # driven entirely by STUB_* environment variables.
+set -uo pipefail
 printf 'docker %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
 
 case "${1:-}" in
