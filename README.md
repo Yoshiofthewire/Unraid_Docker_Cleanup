@@ -48,8 +48,8 @@ with sizes, and removes exactly the ones you confirm.
 Named volumes are excluded until you tick "include named volumes". A volume
 that gains a container reference while the dialog is open is skipped.
 
-A volume whose size shows as `unknown` means its directory could not be read —
-not that it is empty.
+A volume whose size shows as `unknown` means its directory could not be read
+or does not exist — not that it is empty.
 
 The anonymous/named split is a heuristic: a volume is treated as anonymous
 when its name is exactly 64 lowercase hex characters, which is what Docker

@@ -2325,13 +2325,20 @@ document.getElementById('dc_run').addEventListener('click', () => {
   document.getElementById('dc_runform').submit();
 });
 
+function dcEscapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 function dcVolumeRow(v) {
   const disabled = v.anonymous ? '' : ' disabled';
   const cls = v.anonymous ? '' : ' class="dc-disabled"';
+  const name = dcEscapeHtml(v.name);
   return `<label${cls}>
-    <input type="checkbox" class="dc-vol" value="${v.name}"
+    <input type="checkbox" class="dc-vol" value="${name}"
            data-anonymous="${v.anonymous ? 1 : 0}"${disabled}${v.anonymous ? ' checked' : ''}>
-    ${v.name} — ${v.size}${v.anonymous ? '' : ' (named)'}
+    ${name} — ${v.size}${v.anonymous ? '' : ' (named)'}
   </label>`;
 }
 
@@ -2339,8 +2346,16 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
   const body = new FormData();
   body.append('csrf_token', DC_CSRF);
   body.append('action', 'list');
-  const res = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body });
-  const data = await res.json();
+
+  let data;
+  try {
+    const res = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    swal({ title: 'Could not list volumes', text: String(e && e.message ? e.message : e), type: 'error' });
+    return;
+  }
 
   if (data.error) { swal({ title: 'Could not list volumes', text: data.error, type: 'error' }); return; }
   if (!data.volumes.length) { swal({ title: 'Nothing to remove', text: 'No unused volumes were found.', type: 'info' }); return; }
@@ -2348,6 +2363,7 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
   const html = `
     <div class="dc-vol-list">${data.volumes.map(dcVolumeRow).join('')}</div>
     <p><label><input type="checkbox" id="dc_include_named"> Include named volumes</label></p>
+    <p><small>Anonymous is a heuristic: a 64-character lowercase hex name, which is what Docker generates — a user-named volume matching that pattern would show as anonymous too.</small></p>
     <p><b>Deleting a volume permanently destroys the data inside it.</b></p>`;
 
   swal({
@@ -2366,18 +2382,45 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     // into a deletion.
     if (!isConfirm) return;
 
-    const selected = [...document.querySelectorAll('.dc-vol:checked')].map(el => el.value);
+    // :not(:disabled) matters: a disabled checkbox can still carry `checked`
+    // in the DOM (the named-volume toggle relies on exactly that to remember
+    // state while greyed out), so selecting on :checked alone would submit
+    // names the user never had a live, enabled control over.
+    const selected = [...document.querySelectorAll('.dc-vol:checked:not(:disabled)')].map(el => el.value);
     if (!selected.length) { swal({ title: 'Nothing selected', type: 'info' }); return; }
+
+    const confirmBtn = document.querySelector('.sweet-alert button.confirm');
+    if (confirmBtn) confirmBtn.disabled = true;
+
     const rm = new FormData();
     rm.append('csrf_token', DC_CSRF);
     rm.append('action', 'remove');
     for (const name of selected) rm.append('names[]', name);
-    const r = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body: rm });
-    const out = await r.json();
+
+    let out;
+    try {
+      const r = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body: rm });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      out = await r.json();
+    } catch (e) {
+      if (confirmBtn) confirmBtn.disabled = false;
+      swal({ title: 'Removal request failed', text: String(e && e.message ? e.message : e), type: 'error' });
+      return;
+    }
+
+    // volume-prune.sh can partially succeed: some names removed, others
+    // SKIPPED (gained a reference) or REJECTED (failed re-validation) while
+    // the overall exit code is still 0. Surface that as a distinct "warnings"
+    // state rather than reporting a clean success.
+    const outputLines = out.output || [];
+    const hasIssues = outputLines.some((line) => /^(SKIPPED|REJECTED)\b/.test(line));
+    const title = out.exit !== 0 ? 'Finished with errors'
+                : hasIssues ? 'Finished with warnings'
+                : 'Volumes removed';
     swal({
-      title: out.exit === 0 ? 'Volumes removed' : 'Finished with errors',
-      text: (out.output || [out.error]).join('\n'),
-      type: out.exit === 0 ? 'success' : 'warning',
+      title,
+      text: (outputLines.length ? outputLines : [out.error]).join('\n'),
+      type: out.exit === 0 && !hasIssues ? 'success' : 'warning',
     });
   });
 
@@ -2388,8 +2431,15 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     toggle.addEventListener('change', () => {
       for (const el of document.querySelectorAll('.dc-vol')) {
         if (el.dataset.anonymous === '1') continue;
+        // Ticking the box makes named volumes selectable, not selected — it
+        // must never check a box the user hasn't looked at. (This is the
+        // fix for the shipped Critical: the box previously also set
+        // `checked`, which could delete every named volume on the server if
+        // the user ticked it and confirmed without scrolling the list.)
+        // Unticking clears any selection made while enabled, so a value that
+        // scrolled out of view can't survive back into a disabled state.
         el.disabled = !toggle.checked;
-        el.checked = toggle.checked;
+        if (!toggle.checked) el.checked = false;
         el.closest('label').classList.toggle('dc-disabled', !toggle.checked);
       }
     });
