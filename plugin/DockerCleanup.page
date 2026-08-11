@@ -11,13 +11,13 @@ $csrf = $var['csrf_token'] ?? '';
 ?>
 <style>
   .dc-hidden { display: none; }
-  #dc_output { width: 100%; height: 14em; border: 1px solid #ccc; background: #fff; }
+  #dc_output { width: 100%; height: 14em; border: 1px solid #ccc; }
   .dc-vol-list { max-height: 18em; overflow-y: auto; text-align: left; }
   .dc-vol-list label { display: block; padding: 2px 0; }
   .dc-vol-list label.dc-disabled { opacity: 0.5; }
 </style>
 
-<form id="dc_settings" markdown="1">
+<form id="dc_settings" markdown="1" onsubmit="return false">
 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
 
 Enable scheduled cleanup:
@@ -39,9 +39,20 @@ Schedule:
 
 <span class="dc-row" id="dc_row_minute">Minute:
 : <select name="MINUTE">
-  <?php for ($m = 0; $m < 60; $m += 5): ?>
-    <option value="<?= $m ?>" <?= (int)$cfg['MINUTE'] === $m ? 'selected' : '' ?>><?= sprintf('%02d', $m) ?></option>
-  <?php endfor ?>
+  <?php
+    $dc_minutes = range(0, 55, 5);
+    $dc_cur_minute = (int)$cfg['MINUTE'];
+    if (!in_array($dc_cur_minute, $dc_minutes, true)) {
+      // The validator accepts any minute 0-59; if the configured value isn't
+      // one of the 5-minute presets, add it so the field round-trips instead
+      // of silently snapping to 0 on the next Apply.
+      $dc_minutes[] = $dc_cur_minute;
+      sort($dc_minutes);
+    }
+    foreach ($dc_minutes as $m):
+  ?>
+    <option value="<?= $m ?>" <?= $dc_cur_minute === $m ? 'selected' : '' ?>><?= sprintf('%02d', $m) ?></option>
+  <?php endforeach ?>
   </select>
 </span>
 
@@ -115,7 +126,9 @@ Last run:
 const DC_CSRF = <?= json_encode((string)$csrf) ?>;
 
 function dcShowScheduleRows() {
-  const schedule = document.getElementById('dc_schedule').value;
+  const scheduleEl = document.getElementById('dc_schedule');
+  if (!scheduleEl) return;
+  const schedule = scheduleEl.value;
   const shown = {
     hourly:  ['dc_row_minute'],
     daily:   ['dc_row_minute', 'dc_row_hour'],
@@ -124,34 +137,69 @@ function dcShowScheduleRows() {
     custom:  ['dc_row_custom'],
   }[schedule] || [];
   for (const id of ['dc_row_minute','dc_row_hour','dc_row_dow','dc_row_dom','dc_row_custom']) {
-    document.getElementById(id).classList.toggle('dc-hidden', !shown.includes(id));
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('dc-hidden', !shown.includes(id));
+  }
+}
+
+async function dcRefreshLastRun() {
+  // Best-effort: re-fetch this same page and copy the server-rendered
+  // "Last run" text over the stale value. If anything about the fetch or
+  // the markup doesn't line up, leave the existing text alone rather than
+  // breaking the page.
+  try {
+    const res = await fetch(window.location.href, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const html = await res.text();
+    const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('dc_lastrun');
+    const mine = document.getElementById('dc_lastrun');
+    if (fresh && mine) {
+      mine.textContent = fresh.textContent;
+    }
+  } catch (e) {
+    // ignore - stale "Last run" text is better than a broken page
   }
 }
 
 document.getElementById('dc_schedule').addEventListener('change', dcShowScheduleRows);
-dcShowScheduleRows();
 
 document.getElementById('dc_save').addEventListener('click', async () => {
   const status = document.getElementById('dc_status');
   status.textContent = 'Saving…';
-  const body = new FormData(document.getElementById('dc_settings'));
-  const res = await fetch('/plugins/docker.cleanup/include/save.php', { method: 'POST', body });
-  const text = await res.text();
-  status.textContent = text.trim();
+  try {
+    const body = new FormData(document.getElementById('dc_settings'));
+    const res = await fetch('/plugins/docker.cleanup/include/save.php', { method: 'POST', body });
+    const text = await res.text();
+    status.textContent = text.trim();
+    if (res.ok) {
+      dcRefreshLastRun();
+    }
+  } catch (e) {
+    status.textContent = 'Save failed: ' + (e && e.message ? e.message : e);
+  }
 });
 
 document.getElementById('dc_run').addEventListener('click', () => {
-  document.getElementById('dc_output').classList.remove('dc-hidden');
+  const frame = document.getElementById('dc_output');
+  frame.classList.remove('dc-hidden');
+  frame.addEventListener('load', dcRefreshLastRun, { once: true });
   document.getElementById('dc_runform').submit();
 });
+
+function dcEscapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
 
 function dcVolumeRow(v) {
   const disabled = v.anonymous ? '' : ' disabled';
   const cls = v.anonymous ? '' : ' class="dc-disabled"';
+  const name = dcEscapeHtml(v.name);
   return `<label${cls}>
-    <input type="checkbox" class="dc-vol" value="${v.name}"
+    <input type="checkbox" class="dc-vol" value="${name}"
            data-anonymous="${v.anonymous ? 1 : 0}"${disabled}${v.anonymous ? ' checked' : ''}>
-    ${v.name} — ${v.size}${v.anonymous ? '' : ' (named)'}
+    ${name} — ${v.size}${v.anonymous ? '' : ' (named)'}
   </label>`;
 }
 
@@ -159,8 +207,16 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
   const body = new FormData();
   body.append('csrf_token', DC_CSRF);
   body.append('action', 'list');
-  const res = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body });
-  const data = await res.json();
+
+  let data;
+  try {
+    const res = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    swal({ title: 'Could not list volumes', text: String(e && e.message ? e.message : e), type: 'error' });
+    return;
+  }
 
   if (data.error) { swal({ title: 'Could not list volumes', text: data.error, type: 'error' }); return; }
   if (!data.volumes.length) { swal({ title: 'Nothing to remove', text: 'No unused volumes were found.', type: 'info' }); return; }
@@ -175,19 +231,43 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     html: true, text: html,
     showCancelButton: true, confirmButtonText: 'Delete them',
     confirmButtonColor: '#c0392b', closeOnConfirm: false,
-  }, async () => {
-    const selected = [...document.querySelectorAll('.dc-vol:checked')].map(el => el.value);
+  }, async (isConfirm) => {
+    // SweetAlert 1.x calls this callback for both outcomes: true on confirm,
+    // false on cancel/escape/overlay-click. Without this guard, cancelling
+    // deletes the pre-checked anonymous volumes anyway.
+    if (!isConfirm) return;
+
+    const selected = [...document.querySelectorAll('.dc-vol:checked:not(:disabled)')].map(el => el.value);
     if (!selected.length) { swal({ title: 'Nothing selected', type: 'info' }); return; }
+
+    const confirmBtn = document.querySelector('.sweet-alert button.confirm');
+    if (confirmBtn) confirmBtn.disabled = true;
+
     const rm = new FormData();
     rm.append('csrf_token', DC_CSRF);
     rm.append('action', 'remove');
     for (const name of selected) rm.append('names[]', name);
-    const r = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body: rm });
-    const out = await r.json();
+
+    let out;
+    try {
+      const r = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body: rm });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      out = await r.json();
+    } catch (e) {
+      if (confirmBtn) confirmBtn.disabled = false;
+      swal({ title: 'Removal request failed', text: String(e && e.message ? e.message : e), type: 'error' });
+      return;
+    }
+
+    const outputLines = out.output || [];
+    const hasIssues = outputLines.some((line) => /^(SKIPPED|REJECTED)\b/.test(line));
+    const title = out.exit !== 0 ? 'Finished with errors'
+                : hasIssues ? 'Finished with warnings'
+                : 'Volumes removed';
     swal({
-      title: out.exit === 0 ? 'Volumes removed' : 'Finished with errors',
-      text: (out.output || [out.error]).join('\n'),
-      type: out.exit === 0 ? 'success' : 'warning',
+      title,
+      text: (outputLines.length ? outputLines : [out.error]).join('\n'),
+      type: out.exit === 0 && !hasIssues ? 'success' : 'warning',
     });
   });
 
@@ -205,4 +285,6 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     });
   }, 0);
 });
+
+dcShowScheduleRows();
 </script>
