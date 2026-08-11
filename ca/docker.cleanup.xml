@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PluginEntry>
+  <Name>Docker Cleanup</Name>
+  <Author>Yoshiofthewire</Author>
+  <Category>Tools:Utilities System:Utilities</Category>
+  <PluginURL>https://raw.githubusercontent.com/Yoshiofthewire/Unraid_Docker_Cleanup/main/docker.cleanup.plg</PluginURL>
+  <Support>https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup/issues</Support>
+  <Project>https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup</Project>
+  <Icon>https://raw.githubusercontent.com/Yoshiofthewire/Unraid_Docker_Cleanup/main/images/docker-cleanup.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Yoshiofthewire/unraid_docker_apps/main/docker.cleanup.xml</TemplateURL>
+  <Overview>
+    Reclaims disk space by pruning unused Docker images on a schedule you
+    choose, with an Unraid notification reporting the space reclaimed.
+    Also offers a manual, confirmation-gated removal of leftover Docker
+    volumes that shows exactly what will be deleted first. Volumes are never
+    deleted on a schedule.
+  </Overview>
+  <MinVer>6.12.0</MinVer>
+</PluginEntry>

@@ -107,7 +107,11 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Child DOX Index
 
-- `docs/` — design specs and implementation plans. No child AGENTS.md yet; the
-  root contract applies. Add child docs for `plugin/`, `build/`, and `tests/`
-  when those directories are created.
+- `plugin/AGENTS.md` — the tree installed to the server: settings page, PHP
+  handlers, shell scripts. Owns the script/PHP boundary rules.
+- `tests/AGENTS.md` — the bash test suite and its stubs. Owns test conventions.
+- `docs/` — design specs and implementation plans. No child AGENTS.md; the
+  root contract applies.
+- `build/`, `ca/`, `images/` — packaging, Community Applications metadata, and
+  the CA listing icon. No child AGENTS.md; the root contract applies.
 
