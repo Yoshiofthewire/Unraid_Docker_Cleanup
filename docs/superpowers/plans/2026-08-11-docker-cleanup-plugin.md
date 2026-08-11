@@ -2355,7 +2355,17 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     html: true, text: html,
     showCancelButton: true, confirmButtonText: 'Delete them',
     confirmButtonColor: '#c0392b', closeOnConfirm: false,
-  }, async () => {
+  }, async (isConfirm) => {
+    // SweetAlert 1.x invokes this callback on cancel too — true on confirm,
+    // false on cancel/escape/overlay-click. Without this guard, cancelling
+    // the dialog deletes the pre-checked anonymous volumes anyway. The check
+    // is `if (!isConfirm) return;` rather than `if (isConfirm === false)
+    // return;` so it also fails safe if this ever runs under SweetAlert 2,
+    // where the callback form isn't supported and the argument comes through
+    // as `undefined` — a strict `=== false` check would let that fall through
+    // into a deletion.
+    if (!isConfirm) return;
+
     const selected = [...document.querySelectorAll('.dc-vol:checked')].map(el => el.value);
     if (!selected.length) { swal({ title: 'Nothing selected', type: 'info' }); return; }
     const rm = new FormData();
