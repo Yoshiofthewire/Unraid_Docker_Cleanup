@@ -48,6 +48,18 @@ $raw = (string)file_get_contents($cfgFile);
 check('quotes are stripped from values', !str_contains($raw, 'a"b'));
 check('one line per key after sanitising', substr_count($raw, "\n") === 8);
 
+// A trailing backslash must not leave the value's quotes unterminated for
+// parse_ini_file — that would make the whole file unparsable and silently
+// fall every key back to its default, including ENABLED.
+dc_write_cfg(['ENABLED' => 'yes', 'SCHEDULE' => 'custom', 'HOUR' => '3', 'MINUTE' => '0',
+              'DAY_OF_WEEK' => '0', 'DAY_OF_MONTH' => '1',
+              'CUSTOM_CRON' => 'a\\', 'NOTIFY' => 'yes'], $cfgFile);
+$raw = (string)file_get_contents($cfgFile);
+check('backslashes are stripped from values', !str_contains($raw, '\\'));
+$roundTripped = dc_read_cfg();
+check('config round-trips after a backslash value (not falling back to defaults)',
+    $roundTripped['ENABLED'] === 'yes' && $roundTripped['SCHEDULE'] === 'custom');
+
 check('lastrun is null when absent', dc_lastrun() === null);
 file_put_contents($lastrunFile, "2026-08-11T03:00:04-05:00|ok|Reclaimed 4.509GB\n");
 $lr = dc_lastrun();

@@ -39,8 +39,12 @@ function dc_read_cfg(): array {
 function dc_write_cfg(array $cfg, string $path): bool {
     $out = '';
     foreach (array_keys(dc_defaults()) as $key) {
-        // Strip quotes and newlines so a value can never break the file format.
-        $value = str_replace(['"', "\r", "\n"], '', (string)($cfg[$key] ?? ''));
+        // Strip quotes, backslashes, and newlines so a value can never break
+        // the file format. A trailing backslash left in front of the closing
+        // quote would leave the string unterminated for parse_ini_file, which
+        // then returns false for the *whole file* — every key silently falls
+        // back to its default, not just this one.
+        $value = str_replace(['"', '\\', "\r", "\n"], '', (string)($cfg[$key] ?? ''));
         $out .= sprintf("%s=\"%s\"\n", $key, $value);
     }
     return file_put_contents($path, $out) !== false;

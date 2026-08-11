@@ -224,6 +224,7 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
   const html = `
     <div class="dc-vol-list">${data.volumes.map(dcVolumeRow).join('')}</div>
     <p><label><input type="checkbox" id="dc_include_named"> Include named volumes</label></p>
+    <p><small>Anonymous is a heuristic: a 64-character lowercase hex name, which is what Docker generates — a user-named volume matching that pattern would show as anonymous too.</small></p>
     <p><b>Deleting a volume permanently destroys the data inside it.</b></p>`;
 
   swal({
@@ -278,8 +279,12 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     toggle.addEventListener('change', () => {
       for (const el of document.querySelectorAll('.dc-vol')) {
         if (el.dataset.anonymous === '1') continue;
+        // Ticking the box makes named volumes selectable, not selected — it
+        // must never check a box the user hasn't looked at. Unticking clears
+        // any selection made while it was enabled, so a value that scrolled
+        // out of view can't survive back into a disabled, hidden state.
         el.disabled = !toggle.checked;
-        el.checked = toggle.checked;
+        if (!toggle.checked) el.checked = false;
         el.closest('label').classList.toggle('dc-disabled', !toggle.checked);
       }
     });

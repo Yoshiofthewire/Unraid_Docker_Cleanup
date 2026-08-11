@@ -75,7 +75,9 @@ removepkg &pkgBase; 2>/dev/null
 rm -rf &emhttp;
 rm -f /var/log/docker-cleanup.log
 rm -f &plgPATH;/&name;-*.txz
-rm -f &plgPATH;/&name;.plg
+# The .plg installer manifest lives flat under /boot/config/plugins, not
+# inside &plgPATH; — that subdirectory holds only this plugin's own data.
+rm -f /boot/config/plugins/&name;.plg
 
 # The user's settings stay on flash so a reinstall restores the schedule.
 echo ""

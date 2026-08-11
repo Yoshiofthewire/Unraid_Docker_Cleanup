@@ -23,6 +23,9 @@ TARGET="$STAGE/usr/local/emhttp/plugins/$NAME"
 mkdir -p "$TARGET" "$DEST"
 cp -a "$ROOT/plugin/." "$TARGET/"
 
+# Dev-only files that live under plugin/ for convenience but must never ship.
+rm -f "$TARGET/AGENTS.md" "$TARGET/scripts/.gitkeep"
+
 # Scripts must be executable inside the package; everything else stays 644.
 find "$TARGET" -type f -exec chmod 644 {} +
 find "$TARGET/scripts" -type f -name '*.sh' -exec chmod 755 {} +

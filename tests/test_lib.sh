@@ -140,6 +140,17 @@ test_notify_user_silent_when_disabled() {
   assert_not_contains "$(stub_log)" "notify "
 }
 
+test_notify_user_logs_when_binary_is_not_executable() {
+  lib
+  NOTIFY="yes"
+  NOTIFY_BIN="$TMP/bin/does-not-exist"
+  : "${NOTIFY_BIN}"  # used by notify_user
+  notify_user "Subject here" "Detail here" "normal"
+  assert_not_contains "$(stub_log)" "notify "
+  assert_file_exists "$LOG_FILE"
+  assert_contains "$(cat "$LOG_FILE")" "NOTIFY_BIN is not executable"
+}
+
 test_docker_available_true_when_info_succeeds() {
   lib
   if docker_available; then :; else fail "expected docker_available to succeed"; fi

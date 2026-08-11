@@ -99,6 +99,15 @@ test_package_is_owned_by_root() {
   done <<< "$listing"
 }
 
+test_package_excludes_dev_only_files() {
+  stage_repo
+  build 2026.08.11 >/dev/null
+  local listing
+  listing="$(tar -tf "$TMP/repo/release/$(pkg_txz 2026.08.11)")"
+  assert_not_contains "$listing" "AGENTS.md"
+  assert_not_contains "$listing" ".gitkeep"
+}
+
 test_plg_is_stamped_with_version_and_md5() {
   stage_repo
   build 2026.08.11 >/dev/null

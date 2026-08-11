@@ -71,7 +71,10 @@ log_block() {
 
 notify_user() { # subject detail [normal|warning]
   [[ "$NOTIFY" == "yes" ]] || return 0
-  [[ -x "$NOTIFY_BIN" ]] || return 0
+  if [[ ! -x "$NOTIFY_BIN" ]]; then
+    log_line "notify_user: NOTIFY_BIN is not executable: $NOTIFY_BIN"
+    return 0
+  fi
   "$NOTIFY_BIN" -e "Docker Cleanup" -s "$1" -d "$2" -i "${3:-normal}" >/dev/null 2>&1
   return 0
 }

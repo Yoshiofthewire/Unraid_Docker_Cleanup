@@ -70,13 +70,19 @@ test_disabled_removes_fragment_and_calls_update_cron() {
   assert_contains "$(stub_log)" "update_cron"
 }
 
-test_disable_flag_removes_fragment_without_config() {
+test_disable_flag_removes_fragment_and_calls_update_cron() {
+  # --disable is the uninstall contract: it must remove the fragment AND
+  # rebuild the system crontab, not just tidy up flash. The config is left in
+  # place, matching real uninstall (AGENTS.md: the .cfg stays on flash), so
+  # this can't be satisfied by --disable silently falling through to the
+  # ENABLED=no default path instead of its own branch.
   write_cfg ENABLED=yes
   cron_apply
   assert_file_exists "$CRON_FILE"
-  rm -f "$CFG_FILE"
+  : > "$STUB_LOG"
   cron_apply --disable
   assert_file_missing "$CRON_FILE"
+  assert_contains "$(stub_log)" "update_cron"
 }
 
 test_missing_update_cron_is_a_loud_failure() {
@@ -346,6 +352,33 @@ test_custom_cron_all_wildcards_is_accepted() {
   write_cfg SCHEDULE=custom CUSTOM_CRON="* * * * *"
   cron_apply
   assert_eq "$(cron_schedule)" "* * * * *"
+}
+
+# --- Regression coverage: CUSTOM_CRON is validated regardless of which
+# schedule is active, so a stale value can never round-trip onto flash. ---
+
+test_custom_cron_is_validated_even_when_schedule_is_not_custom() {
+  write_cfg SCHEDULE=daily CUSTOM_CRON="not a cron line"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_custom_cron_backslash_is_rejected_regardless_of_schedule() {
+  local trailing_backslash
+  trailing_backslash=$'a\\'   # literal a followed by one backslash
+  write_cfg SCHEDULE=daily "CUSTOM_CRON=$trailing_backslash"
+  local status
+  cron_apply >/dev/null 2>&1
+  status=$?
+  assert_status "$status" 1
+}
+
+test_empty_custom_cron_is_fine_when_schedule_is_not_custom() {
+  write_cfg SCHEDULE=daily CUSTOM_CRON=""
+  cron_apply
+  assert_eq "$(cron_schedule)" "0 3 * * *"
 }
 
 test_write_failure_is_reported_not_swallowed() {
