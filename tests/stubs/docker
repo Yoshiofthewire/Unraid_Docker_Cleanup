@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Stub docker. Records its arguments and returns canned output. Behaviour is
+# driven entirely by STUB_* environment variables.
+set -uo pipefail
+printf 'docker %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+
+case "${1:-}" in
+  info)
+    if [[ "${STUB_DOCKER_INFO_STATUS:-0}" != "0" ]]; then
+      echo "Cannot connect to the Docker daemon" >&2
+      exit "${STUB_DOCKER_INFO_STATUS}"
+    fi
+    if [[ "${2:-}" == "--format" ]]; then
+      printf '%s\n' "${STUB_DOCKER_ROOT:-/var/lib/docker}"
+    fi
+    exit 0
+    ;;
+  image)
+    if [[ "${STUB_IMAGE_PRUNE_STATUS:-0}" != "0" ]]; then
+      echo "Error response from daemon: conflict" >&2
+      exit "${STUB_IMAGE_PRUNE_STATUS}"
+    fi
+    printf 'Deleted Images:\nuntagged: example/app:latest\n\nTotal reclaimed space: %s\n' \
+      "${STUB_RECLAIMED:-4.509GB}"
+    exit 0
+    ;;
+  volume)
+    case "${2:-}" in
+      ls)
+        # `--filter dangling=true` lists only unreferenced volumes
+        # (STUB_DANGLING). An unfiltered call lists every volume
+        # (STUB_ALL_VOLUMES), used by volume-prune.sh to see what remains
+        # after a partial `volume rm` failure. Falls back to STUB_DANGLING
+        # so callers that don't care about the distinction need not set both.
+        if [[ "$*" == *--filter* ]]; then
+          printf '%s' "${STUB_DANGLING:-}" | grep -v '^[[:space:]]*$'
+        else
+          printf '%s' "${STUB_ALL_VOLUMES:-${STUB_DANGLING:-}}" | grep -v '^[[:space:]]*$'
+        fi
+        exit 0
+        ;;
+      rm)
+        if [[ "${STUB_VOLUME_RM_STATUS:-0}" != "0" ]]; then
+          echo "Error response from daemon: volume is in use" >&2
+          exit "${STUB_VOLUME_RM_STATUS}"
+        fi
+        shift 2
+        had_failure=0
+        for arg in "$@"; do
+          [[ "$arg" == "--" ]] && continue
+          if printf '%s\n' "${STUB_VOLUME_RM_FAIL:-}" | grep -qxF -- "$arg"; then
+            echo "Error response from daemon: remove $arg: volume is in use" >&2
+            had_failure=1
+            continue
+          fi
+          printf '%s\n' "$arg"
+        done
+        exit "$had_failure"
+        ;;
+    esac
+    ;;
+esac
+
+echo "stub docker: unhandled invocation: $*" >&2
+exit 99

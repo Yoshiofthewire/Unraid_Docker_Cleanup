@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -uo pipefail
+printf 'update_cron\n' >> "${STUB_LOG:-/dev/null}"
+exit "${STUB_UPDATE_CRON_STATUS:-0}"

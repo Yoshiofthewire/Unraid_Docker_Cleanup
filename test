@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Single entry point: lint, then unit tests.
+# Lint runs in Docker so nothing has to be installed on the dev machine.
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT" || exit 1
+status=0
+
+if command -v docker >/dev/null 2>&1; then
+  if [[ "${SKIP_LINT:-0}" != "1" ]]; then
+    echo "== shellcheck =="
+    mapfile -t sh_files < <(
+      find plugin tests build -type f -name '*.sh' 2>/dev/null
+      printf '%s\n' test tests/stubs/docker tests/stubs/notify tests/stubs/update_cron
+    )
+    docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt koalaman/shellcheck:stable \
+      --shell=bash --external-sources -P SCRIPTDIR "${sh_files[@]}" || status=1
+
+    echo "== php -l =="
+    while IFS= read -r php_file; do
+      docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli php -l "$php_file" || status=1
+    done < <(find plugin -type f -name '*.php' 2>/dev/null)
+
+    echo "== php -l (.page) =="
+    # A .page file carries four Unraid metadata lines above a '---' separator
+    # that are not PHP; strip through that line before linting the rest.
+    while IFS= read -r page_file; do
+      docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli \
+        sh -c 'sed -n "/^---\$/,\$p" "$1" | tail -n +2 | php -l' _ "$page_file" \
+        || status=1
+    done < <(find plugin -type f -name '*.page' 2>/dev/null)
+  fi
+
+  # Not lint: real unit tests. They need Docker, so they stay in this
+  # branch, but they run regardless of SKIP_LINT.
+  echo "== php tests =="
+  docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli \
+    php tests/php/test_config.php || status=1
+elif [[ "${SKIP_LINT:-0}" != "1" ]]; then
+  echo "docker not found — lint requires Docker or SKIP_LINT=1" >&2
+  status=1
+fi
+
+echo "== unit tests =="
+bash tests/run.sh "$@" || status=1
+
+exit "$status"

@@ -1,0 +1,295 @@
+Menu="Utilities"
+Type="xmenu"
+Title="Docker Cleanup"
+Icon="fa-recycle"
+---
+<?php
+require_once "/usr/local/emhttp/plugins/docker.cleanup/include/config.php";
+$cfg  = dc_read_cfg();
+$last = dc_lastrun();
+$csrf = $var['csrf_token'] ?? '';
+?>
+<style>
+  .dc-hidden { display: none; }
+  #dc_output { width: 100%; height: 14em; border: 1px solid #ccc; }
+  .dc-vol-list { max-height: 18em; overflow-y: auto; text-align: left; }
+  .dc-vol-list label { display: block; padding: 2px 0; }
+  .dc-vol-list label.dc-disabled { opacity: 0.5; }
+</style>
+
+<form id="dc_settings" markdown="1" onsubmit="return false">
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
+
+Enable scheduled cleanup:
+: <select name="ENABLED" id="dc_enabled">
+    <option value="yes" <?= $cfg['ENABLED'] === 'yes' ? 'selected' : '' ?>>Yes</option>
+    <option value="no"  <?= $cfg['ENABLED'] !== 'yes' ? 'selected' : '' ?>>No</option>
+  </select>
+
+> Runs `docker image prune -a -f`, which removes every image no container
+> references. Containers and volumes are never touched.
+
+Schedule:
+: <select name="SCHEDULE" id="dc_schedule">
+  <?php foreach (['hourly' => 'Hourly', 'daily' => 'Daily', 'weekly' => 'Weekly',
+                  'monthly' => 'Monthly', 'custom' => 'Custom cron'] as $k => $label): ?>
+    <option value="<?= $k ?>" <?= $cfg['SCHEDULE'] === $k ? 'selected' : '' ?>><?= $label ?></option>
+  <?php endforeach ?>
+  </select>
+
+<span class="dc-row" id="dc_row_minute">Minute:
+: <select name="MINUTE">
+  <?php
+    $dc_minutes = range(0, 55, 5);
+    $dc_cur_minute = (int)$cfg['MINUTE'];
+    if (!in_array($dc_cur_minute, $dc_minutes, true)) {
+      // The validator accepts any minute 0-59; if the configured value isn't
+      // one of the 5-minute presets, add it so the field round-trips instead
+      // of silently snapping to 0 on the next Apply.
+      $dc_minutes[] = $dc_cur_minute;
+      sort($dc_minutes);
+    }
+    foreach ($dc_minutes as $m):
+  ?>
+    <option value="<?= $m ?>" <?= $dc_cur_minute === $m ? 'selected' : '' ?>><?= sprintf('%02d', $m) ?></option>
+  <?php endforeach ?>
+  </select>
+</span>
+
+<span class="dc-row" id="dc_row_hour">Hour:
+: <select name="HOUR">
+  <?php for ($h = 0; $h < 24; $h++): ?>
+    <option value="<?= $h ?>" <?= (int)$cfg['HOUR'] === $h ? 'selected' : '' ?>><?= sprintf('%02d', $h) ?></option>
+  <?php endfor ?>
+  </select>
+</span>
+
+<span class="dc-row" id="dc_row_dow">Day of week:
+: <select name="DAY_OF_WEEK">
+  <?php foreach (['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] as $i => $d): ?>
+    <option value="<?= $i ?>" <?= (int)$cfg['DAY_OF_WEEK'] === $i ? 'selected' : '' ?>><?= $d ?></option>
+  <?php endforeach ?>
+  </select>
+</span>
+
+<span class="dc-row" id="dc_row_dom">Day of month:
+: <select name="DAY_OF_MONTH">
+  <?php for ($d = 1; $d <= 28; $d++): ?>
+    <option value="<?= $d ?>" <?= (int)$cfg['DAY_OF_MONTH'] === $d ? 'selected' : '' ?>><?= $d ?></option>
+  <?php endfor ?>
+  </select>
+</span>
+
+<span class="dc-row" id="dc_row_custom">Custom cron expression:
+: <input type="text" name="CUSTOM_CRON" size="24"
+         value="<?= htmlspecialchars($cfg['CUSTOM_CRON']) ?>" placeholder="0 3 * * *">
+</span>
+
+> Five fields: minute, hour, day of month, month, day of week.
+> Day of month is limited to 1–28 in the preset schedules so a monthly run
+> never skips February.
+
+Send a notification when it runs:
+: <select name="NOTIFY">
+    <option value="yes" <?= $cfg['NOTIFY'] === 'yes' ? 'selected' : '' ?>>Yes</option>
+    <option value="no"  <?= $cfg['NOTIFY'] !== 'yes' ? 'selected' : '' ?>>No</option>
+  </select>
+
+Last run:
+: <span id="dc_lastrun"><?= $last
+    ? htmlspecialchars("{$last['time']} — {$last['status']} — {$last['message']}")
+    : 'never' ?></span>
+
+&nbsp;
+: <button type="button" id="dc_save">Apply</button>
+  <button type="button" id="dc_run">Run image prune now</button>
+  <span id="dc_status"></span>
+</form>
+
+<form id="dc_runform" method="POST"
+      action="/plugins/docker.cleanup/include/run.php" target="dc_output_frame">
+  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
+</form>
+<iframe id="dc_output" name="dc_output_frame" class="dc-hidden" title="Prune output"></iframe>
+
+<hr>
+
+### Unused volumes
+
+> Deleting a volume destroys the data inside it. This never runs on a schedule
+> and never runs without your confirmation.
+
+&nbsp;
+: <button type="button" id="dc_volumes">Prune unused volumes</button>
+
+<script>
+const DC_CSRF = <?= json_encode((string)$csrf) ?>;
+
+function dcShowScheduleRows() {
+  const scheduleEl = document.getElementById('dc_schedule');
+  if (!scheduleEl) return;
+  const schedule = scheduleEl.value;
+  const shown = {
+    hourly:  ['dc_row_minute'],
+    daily:   ['dc_row_minute', 'dc_row_hour'],
+    weekly:  ['dc_row_minute', 'dc_row_hour', 'dc_row_dow'],
+    monthly: ['dc_row_minute', 'dc_row_hour', 'dc_row_dom'],
+    custom:  ['dc_row_custom'],
+  }[schedule] || [];
+  for (const id of ['dc_row_minute','dc_row_hour','dc_row_dow','dc_row_dom','dc_row_custom']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('dc-hidden', !shown.includes(id));
+  }
+}
+
+async function dcRefreshLastRun() {
+  // Best-effort: re-fetch this same page and copy the server-rendered
+  // "Last run" text over the stale value. If anything about the fetch or
+  // the markup doesn't line up, leave the existing text alone rather than
+  // breaking the page.
+  try {
+    const res = await fetch(window.location.href, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const html = await res.text();
+    const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('dc_lastrun');
+    const mine = document.getElementById('dc_lastrun');
+    if (fresh && mine) {
+      mine.textContent = fresh.textContent;
+    }
+  } catch (e) {
+    // ignore - stale "Last run" text is better than a broken page
+  }
+}
+
+document.getElementById('dc_schedule').addEventListener('change', dcShowScheduleRows);
+
+document.getElementById('dc_save').addEventListener('click', async () => {
+  const status = document.getElementById('dc_status');
+  status.textContent = 'Saving…';
+  try {
+    const body = new FormData(document.getElementById('dc_settings'));
+    const res = await fetch('/plugins/docker.cleanup/include/save.php', { method: 'POST', body });
+    const text = await res.text();
+    status.textContent = text.trim();
+    if (res.ok) {
+      dcRefreshLastRun();
+    }
+  } catch (e) {
+    status.textContent = 'Save failed: ' + (e && e.message ? e.message : e);
+  }
+});
+
+document.getElementById('dc_run').addEventListener('click', () => {
+  const frame = document.getElementById('dc_output');
+  frame.classList.remove('dc-hidden');
+  frame.addEventListener('load', dcRefreshLastRun, { once: true });
+  document.getElementById('dc_runform').submit();
+});
+
+function dcEscapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function dcVolumeRow(v) {
+  const disabled = v.anonymous ? '' : ' disabled';
+  const cls = v.anonymous ? '' : ' class="dc-disabled"';
+  const name = dcEscapeHtml(v.name);
+  return `<label${cls}>
+    <input type="checkbox" class="dc-vol" value="${name}"
+           data-anonymous="${v.anonymous ? 1 : 0}"${disabled}${v.anonymous ? ' checked' : ''}>
+    ${name} — ${v.size}${v.anonymous ? '' : ' (named)'}
+  </label>`;
+}
+
+document.getElementById('dc_volumes').addEventListener('click', async () => {
+  const body = new FormData();
+  body.append('csrf_token', DC_CSRF);
+  body.append('action', 'list');
+
+  let data;
+  try {
+    const res = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    swal({ title: 'Could not list volumes', text: String(e && e.message ? e.message : e), type: 'error' });
+    return;
+  }
+
+  if (data.error) { swal({ title: 'Could not list volumes', text: data.error, type: 'error' }); return; }
+  if (!data.volumes.length) { swal({ title: 'Nothing to remove', text: 'No unused volumes were found.', type: 'info' }); return; }
+
+  const html = `
+    <div class="dc-vol-list">${data.volumes.map(dcVolumeRow).join('')}</div>
+    <p><label><input type="checkbox" id="dc_include_named"> Include named volumes</label></p>
+    <p><small>Anonymous is a heuristic: a 64-character lowercase hex name, which is what Docker generates — a user-named volume matching that pattern would show as anonymous too.</small></p>
+    <p><b>Deleting a volume permanently destroys the data inside it.</b></p>`;
+
+  swal({
+    title: 'These volumes will be permanently deleted',
+    html: true, text: html,
+    showCancelButton: true, confirmButtonText: 'Delete them',
+    confirmButtonColor: '#c0392b', closeOnConfirm: false,
+  }, async (isConfirm) => {
+    // SweetAlert 1.x calls this callback for both outcomes: true on confirm,
+    // false on cancel/escape/overlay-click. Without this guard, cancelling
+    // deletes the pre-checked anonymous volumes anyway.
+    if (!isConfirm) return;
+
+    const selected = [...document.querySelectorAll('.dc-vol:checked:not(:disabled)')].map(el => el.value);
+    if (!selected.length) { swal({ title: 'Nothing selected', type: 'info' }); return; }
+
+    const confirmBtn = document.querySelector('.sweet-alert button.confirm');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    const rm = new FormData();
+    rm.append('csrf_token', DC_CSRF);
+    rm.append('action', 'remove');
+    for (const name of selected) rm.append('names[]', name);
+
+    let out;
+    try {
+      const r = await fetch('/plugins/docker.cleanup/include/volumes.php', { method: 'POST', body: rm });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      out = await r.json();
+    } catch (e) {
+      if (confirmBtn) confirmBtn.disabled = false;
+      swal({ title: 'Removal request failed', text: String(e && e.message ? e.message : e), type: 'error' });
+      return;
+    }
+
+    const outputLines = out.output || [];
+    const hasIssues = outputLines.some((line) => /^(SKIPPED|REJECTED)\b/.test(line));
+    const title = out.exit !== 0 ? 'Finished with errors'
+                : hasIssues ? 'Finished with warnings'
+                : 'Volumes removed';
+    swal({
+      title,
+      text: (outputLines.length ? outputLines : [out.error]).join('\n'),
+      type: out.exit === 0 && !hasIssues ? 'success' : 'warning',
+    });
+  });
+
+  // Wire the named-volume toggle once swal has rendered the dialog.
+  setTimeout(() => {
+    const toggle = document.getElementById('dc_include_named');
+    if (!toggle) return;
+    toggle.addEventListener('change', () => {
+      for (const el of document.querySelectorAll('.dc-vol')) {
+        if (el.dataset.anonymous === '1') continue;
+        // Ticking the box makes named volumes selectable, not selected — it
+        // must never check a box the user hasn't looked at. Unticking clears
+        // any selection made while it was enabled, so a value that scrolled
+        // out of view can't survive back into a disabled, hidden state.
+        el.disabled = !toggle.checked;
+        if (!toggle.checked) el.checked = false;
+        el.closest('label').classList.toggle('dc-disabled', !toggle.checked);
+      }
+    });
+  }, 0);
+});
+
+dcShowScheduleRows();
+</script>

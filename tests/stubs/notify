@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -uo pipefail
+printf 'notify %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+exit 0
