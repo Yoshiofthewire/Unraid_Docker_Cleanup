@@ -173,6 +173,16 @@ document.getElementById('dc_save').addEventListener('click', async () => {
     status.textContent = text.trim();
     if (res.ok) {
       dcRefreshLastRun();
+    } else {
+      // The custom cron field is validated on every save, not only when
+      // Custom is the selected schedule — a value that cannot round-trip
+      // must never reach flash. It is also the only hideable field that can
+      // fail validation, since every other schedule control is a <select>
+      // offering valid options only. So a rejected save whose cause is
+      // off-screen is always this one: reveal it rather than reporting an
+      // error about a control the user cannot see.
+      const customRow = document.getElementById('dc_row_custom');
+      if (customRow) customRow.classList.remove('dc-hidden');
     }
   } catch (e) {
     status.textContent = 'Save failed: ' + (e && e.message ? e.message : e);

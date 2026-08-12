@@ -85,6 +85,40 @@ test_disable_flag_removes_fragment_and_calls_update_cron() {
   assert_contains "$(stub_log)" "update_cron"
 }
 
+test_disable_flag_works_with_no_config_at_all() {
+  # The uninstaller must be able to stop the job even when the config is
+  # missing or unreadable, which is why --disable short-circuits before
+  # load_cfg. Deleting the cfg here is what pins that ordering: if --disable
+  # ever moved below load_cfg, this is the test that catches it.
+  write_cfg ENABLED=yes
+  cron_apply
+  assert_file_exists "$CRON_FILE"
+  rm -f "$CFG_FILE"
+  : > "$STUB_LOG"
+  local status
+  cron_apply --disable
+  status=$?
+  assert_status "$status" 0
+  assert_file_missing "$CRON_FILE"
+  assert_contains "$(stub_log)" "update_cron"
+}
+
+test_disable_flag_works_with_an_unreadable_config() {
+  # Same contract, the other way a config goes bad: garbage that would fail
+  # validation must not block the disable.
+  write_cfg ENABLED=yes
+  cron_apply
+  assert_file_exists "$CRON_FILE"
+  printf 'SCHEDULE="custom"\nCUSTOM_CRON="not a cron line"\n' > "$CFG_FILE"
+  : > "$STUB_LOG"
+  local status
+  cron_apply --disable
+  status=$?
+  assert_status "$status" 0
+  assert_file_missing "$CRON_FILE"
+  assert_contains "$(stub_log)" "update_cron"
+}
+
 test_missing_update_cron_is_a_loud_failure() {
   write_cfg
   rm -f "$UPDATE_CRON"

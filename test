@@ -25,10 +25,18 @@ if command -v docker >/dev/null 2>&1; then
     echo "== php -l (.page) =="
     # A .page file carries four Unraid metadata lines above a '---' separator
     # that are not PHP; strip through that line before linting the rest.
+    # `php -l` reports success on empty input, so a file with no '---' line
+    # would lint vacuously — refuse to treat an empty body as a pass, since
+    # this is the only automated check these files get.
     while IFS= read -r page_file; do
-      docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli \
-        sh -c 'sed -n "/^---\$/,\$p" "$1" | tail -n +2 | php -l' _ "$page_file" \
-        || status=1
+      docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt php:8-cli sh -c '
+        body=$(sed -n "/^---\$/,\$p" "$1" | tail -n +2)
+        if [ -z "$body" ]; then
+          echo "no PHP body found in $1 — is the --- separator present?" >&2
+          exit 1
+        fi
+        printf "%s\n" "$body" | php -l
+      ' _ "$page_file" || status=1
     done < <(find plugin -type f -name '*.page' 2>/dev/null)
   fi
 
