@@ -129,7 +129,7 @@ test_build_rejects_a_malformed_version() {
 }
 
 test_plg_declares_the_minimum_unraid_version() {
-  assert_contains "$(cat "$REPO_ROOT/docker.cleanup.plg")" 'min="6.12.0"'
+  assert_contains "$(cat "$REPO_ROOT/docker.cleanup.plg")" 'min="7.0.0"'
 }
 
 test_plg_remove_keeps_the_config() {

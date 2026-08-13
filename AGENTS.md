@@ -3,7 +3,7 @@
 
 An Unraid plugin (slug `docker.cleanup`) that runs `docker image prune -a -f` on
 a user-controlled schedule, and offers a manual, confirmation-gated removal of
-unused Docker volumes. Targets Unraid 6.12 and 7.x.
+unused Docker volumes. Targets Unraid 7.x.
 
 - Design spec: `docs/superpowers/specs/2026-08-11-docker-cleanup-plugin-design.md`
 - Published by `Yoshiofthewire`; CA template lives in this repo

@@ -15,5 +15,5 @@
     volumes that shows exactly what will be deleted first. Volumes are never
     deleted on a schedule.
   </Overview>
-  <MinVer>6.12.0</MinVer>
+  <MinVer>7.0.0</MinVer>
 </PluginEntry>

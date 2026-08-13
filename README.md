@@ -23,7 +23,10 @@ https://raw.githubusercontent.com/Yoshiofthewire/Unraid_Docker_Cleanup/main/dock
 
 Settings appear at **Settings ▸ User Utilities ▸ Docker Cleanup**.
 
-Requires Unraid 6.12 or newer.
+Requires Unraid 7.0 or newer. Earlier releases are not supported: the plugin
+has only ever been exercised on 7.x, and the 6.x path for applying the
+schedule — `update_cron` under `webGui/scripts`, which 7.x moved to
+`/usr/local/sbin` — is fallback code that has never run on a real 6.x server.
 
 The settings page itself uses a Font Awesome icon (`fa-recycle`) that the
 Unraid webGui already ships, so no image is packaged with the plugin. The PNG
@@ -40,7 +43,7 @@ is worth knowing before you enable it.
 ## About volumes
 
 `docker volume prune` changed meaning in Docker 23: it stopped removing named
-volumes by default. Unraid 6.12 and 7.x ship different Docker versions, so that
+volumes by default, and Unraid releases ship different Docker versions, so that
 command does different things on different servers. This plugin therefore does
 not call it. It lists the volumes no container references, shows you the list
 with sizes, and removes exactly the ones you confirm.
