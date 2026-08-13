@@ -62,16 +62,34 @@ function dc_csrf_token(string $varIni = '/var/local/emhttp/var.ini'): string {
     return (string)($var['csrf_token'] ?? '');
 }
 
+// The webGui validates CSRF globally and unsets csrf_token from $_POST before
+// a plugin handler runs, so the token has to be read back out of the body PHP
+// received. Still never from the query string: that would leak it into logs,
+// history, and Referer headers.
+function dc_posted_token(array $post, string $raw): string {
+    $posted = $post['csrf_token'] ?? '';
+    if (is_string($posted) && $posted !== '') {
+        return $posted;
+    }
+    $token = dc_parse_post_body($raw)['csrf_token'] ?? '';
+    return is_string($token) ? $token : '';
+}
+
+function dc_urlencoded_body(): string {
+    $type = (string)($_SERVER['CONTENT_TYPE'] ?? '');
+    if (stripos($type, 'application/x-www-form-urlencoded') !== 0) {
+        return '';
+    }
+    $raw = file_get_contents('php://input');
+    return is_string($raw) ? $raw : '';
+}
+
 function dc_csrf_ok(): bool {
     $expected = dc_csrf_token();
     if ($expected === '') {
         return false;   // fail closed
     }
-    // The token must only ever be read from the POST body: accepting it from
-    // the query string would let it leak into logs, history, and Referer.
-    $posted = $_POST['csrf_token'] ?? '';
-    $token = is_string($posted) ? $posted : '';
-    return hash_equals($expected, $token);
+    return hash_equals($expected, dc_posted_token($_POST, dc_urlencoded_body()));
 }
 
 function dc_parse_post_body(string $raw): array {
@@ -91,8 +109,8 @@ function dc_recover_post(): void {
     if (stripos($type, 'application/x-www-form-urlencoded') !== 0) {
         return;
     }
-    $raw = file_get_contents('php://input');
-    if (!is_string($raw) || $raw === '') {
+    $raw = dc_urlencoded_body();
+    if ($raw === '') {
         return;
     }
     $_POST = dc_parse_post_body($raw);

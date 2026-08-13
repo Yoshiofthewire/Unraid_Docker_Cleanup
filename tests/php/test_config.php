@@ -99,6 +99,17 @@ check('csrf token falls back to var.ini', dc_csrf_token($varIni) === 'FROMVARINI
 $var = null;
 check('csrf token is empty when var.ini is absent', dc_csrf_token("$tmp/absent.ini") === '');
 
+// The webGui strips csrf_token out of $_POST before a handler runs, leaving
+// the other fields in place — so the token has to come back from the body.
+$stripped = ['action' => 'list'];
+$rawBody  = 'csrf_token=AAEAFAF3713A23B0&action=list';
+check('token recovered when the webGui stripped it',
+    dc_posted_token($stripped, $rawBody) === 'AAEAFAF3713A23B0');
+check('token in $_POST wins when present',
+    dc_posted_token(['csrf_token' => 'direct'], $rawBody) === 'direct');
+check('no token anywhere yields empty', dc_posted_token(['action' => 'list'], '') === '');
+check('a non-string token is not returned', dc_posted_token(['csrf_token' => ['x']], '') === '');
+
 // A body that arrives without CONTENT_LENGTH leaves $_POST empty, so the
 // fields have to be recoverable from the raw body PHP did receive.
 $body = dc_parse_post_body('csrf_token=abc&action=remove&names%5B%5D=one&names%5B%5D=two');
