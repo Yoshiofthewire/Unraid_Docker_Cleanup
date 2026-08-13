@@ -99,6 +99,13 @@ check('csrf token falls back to var.ini', dc_csrf_token($varIni) === 'FROMVARINI
 $var = null;
 check('csrf token is empty when var.ini is absent', dc_csrf_token("$tmp/absent.ini") === '');
 
+// A body that arrives without CONTENT_LENGTH leaves $_POST empty, so the
+// fields have to be recoverable from the raw body PHP did receive.
+$body = dc_parse_post_body('csrf_token=abc&action=remove&names%5B%5D=one&names%5B%5D=two');
+check('raw body yields scalar fields', ($body['csrf_token'] ?? '') === 'abc');
+check('raw body yields array fields', ($body['names'] ?? []) === ['one', 'two']);
+check('empty raw body yields no fields', dc_parse_post_body('') === []);
+
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);
 

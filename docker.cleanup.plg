@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.cleanup">
 <!ENTITY author    "Yoshiofthewire">
-<!ENTITY version   "2026.08.12.3">
-<!ENTITY md5       "b314de30e70f22be236932dcdb2afda5">
+<!ENTITY version   "2026.08.12.4">
+<!ENTITY md5       "0fa15726e134bf0e3e47b88bc903659c">
 <!ENTITY launch    "Settings/DockerCleanup">
 <!ENTITY repo      "https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup">
 <!ENTITY gitURL    "&repo;/releases/download/&version;">
@@ -22,6 +22,12 @@
 
 <CHANGES>
 ###&version;
+- Fix: recover form fields from the raw request body. nginx can pass a body
+  to php-fpm without a CONTENT_LENGTH, and PHP then leaves $_POST empty even
+  though the body arrived intact — which rejected every button as a CSRF
+  failure.
+
+###2026.08.12.3
 - Fix: the settings page read the CSRF token from a webGui global that is not
   always populated, so every button was rejected. It now reads the token the
   same way the handlers verify it, and says so on the page when none exists.
@@ -84,7 +90,9 @@ if [ -x &emhttp;/scripts/cron-apply.sh ]; then
   &emhttp;/scripts/cron-apply.sh --disable
 else
   rm -f &plgPATH;/&name;.cron
-  [ -x /usr/local/emhttp/webGui/scripts/update_cron ] &amp;&amp; /usr/local/emhttp/webGui/scripts/update_cron
+  for uc in /usr/local/sbin/update_cron /usr/local/emhttp/webGui/scripts/update_cron; do
+    [ -x "$uc" ] &amp;&amp; "$uc" &amp;&amp; break
+  done
 fi
 
 # Remove by the full registered package name, not the bare plugin name —

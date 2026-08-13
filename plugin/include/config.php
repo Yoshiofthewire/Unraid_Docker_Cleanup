@@ -74,6 +74,30 @@ function dc_csrf_ok(): bool {
     return hash_equals($expected, $token);
 }
 
+function dc_parse_post_body(string $raw): array {
+    parse_str($raw, $fields);
+    return $fields;
+}
+
+// nginx can hand php-fpm a request body with no CONTENT_LENGTH — HTTP/2 with
+// request buffering off does exactly that. PHP then leaves $_POST empty even
+// though the body arrived intact and well-formed, so every handler sees no
+// fields at all and the CSRF check rejects a request that carried its token.
+function dc_recover_post(): void {
+    if (!empty($_POST) || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return;
+    }
+    $type = (string)($_SERVER['CONTENT_TYPE'] ?? '');
+    if (stripos($type, 'application/x-www-form-urlencoded') !== 0) {
+        return;
+    }
+    $raw = file_get_contents('php://input');
+    if (!is_string($raw) || $raw === '') {
+        return;
+    }
+    $_POST = dc_parse_post_body($raw);
+}
+
 function dc_require_csrf(): void {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         http_response_code(405);
@@ -81,6 +105,7 @@ function dc_require_csrf(): void {
         header('Allow: POST');
         exit("Method Not Allowed: POST required\n");
     }
+    dc_recover_post();
     if (!dc_csrf_ok()) {
         http_response_code(403);
         header('Content-Type: text/plain');
