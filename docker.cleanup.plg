@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.cleanup">
 <!ENTITY author    "Yoshiofthewire">
-<!ENTITY version   "2026.08.12">
-<!ENTITY md5       "c22a13504132b5d0aa38db9c5ed79820">
+<!ENTITY version   "2026.08.12.1">
+<!ENTITY md5       "36040771081afc2d0c326c26844259d4">
 <!ENTITY launch    "Settings/DockerCleanup">
 <!ENTITY repo      "https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup">
 <!ENTITY gitURL    "&repo;/releases/download/&version;">
@@ -22,6 +22,11 @@
 
 <CHANGES>
 ###&version;
+- Fix: the schedule was never applied on Unraid 7.x. update_cron moved to
+  /usr/local/sbin; both locations are now probed, and a missing one is
+  reported instead of passing silently.
+
+###2026.08.12
 - Initial release: scheduled `docker image prune -a -f`, plus a manual,
   confirmation-gated removal of unused volumes.
 </CHANGES>

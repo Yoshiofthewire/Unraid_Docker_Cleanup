@@ -126,8 +126,8 @@ validate_cfg() {
 }
 
 apply_cron() {
-  if [[ ! -x "$UPDATE_CRON" ]]; then
-    echo "Cannot apply the schedule: update_cron not found at $UPDATE_CRON" >&2
+  if [[ -z "$UPDATE_CRON" || ! -x "$UPDATE_CRON" ]]; then
+    echo "Cannot apply the schedule: no executable update_cron found (tried: ${UPDATE_CRON_PATHS[*]})" >&2
     return 1
   fi
   "$UPDATE_CRON" >/dev/null 2>&1

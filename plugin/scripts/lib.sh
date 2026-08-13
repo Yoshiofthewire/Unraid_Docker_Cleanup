@@ -11,7 +11,19 @@ CRON_FILE="${CRON_FILE:-$BOOT_CONFIG/$PLUGIN.cron}"
 LASTRUN_FILE="${LASTRUN_FILE:-$BOOT_CONFIG/lastrun}"
 LOG_FILE="${LOG_FILE:-/var/log/docker-cleanup.log}"
 LOCK_FILE="${LOCK_FILE:-/var/run/docker-cleanup.lock}"
-UPDATE_CRON="${UPDATE_CRON:-/usr/local/emhttp/webGui/scripts/update_cron}"
+# Unraid 7.x ships update_cron in /usr/local/sbin; 6.x had it under webGui.
+# Probed rather than hardcoded: the wrong path leaves every schedule unapplied
+# while the plugin still reports success, which is how this shipped broken.
+read -ra UPDATE_CRON_PATHS <<< "${UPDATE_CRON_PATHS:-/usr/local/sbin/update_cron /usr/local/emhttp/webGui/scripts/update_cron}"
+UPDATE_CRON="${UPDATE_CRON:-}"
+if [[ -z "$UPDATE_CRON" ]]; then
+  for _candidate in "${UPDATE_CRON_PATHS[@]}"; do
+    [[ -x "$_candidate" ]] || continue
+    UPDATE_CRON="$_candidate"
+    break
+  done
+  unset _candidate
+fi
 NOTIFY_BIN="${NOTIFY_BIN:-/usr/local/emhttp/webGui/scripts/notify}"
 LOG_MAX_BYTES="${LOG_MAX_BYTES:-1048576}"
 

@@ -129,6 +129,37 @@ test_missing_update_cron_is_a_loud_failure() {
   assert_contains "$out" "update_cron"
 }
 
+# Read a variable out of a fresh lib.sh load. Empty paths selects the shipped
+# default list; UPDATE_CRON is cleared so the probe actually runs.
+lib_var() { # candidate-paths expression
+  UPDATE_CRON= UPDATE_CRON_PATHS="$1" \
+    bash -c "source \"\$0\"; printf '%s' $2" "$REPO_ROOT/plugin/scripts/lib.sh"
+}
+
+test_update_cron_is_probed_from_the_candidate_list() {
+  local chosen
+  chosen="$(lib_var "$TMP/bin/missing $TMP/bin/update_cron" '"$UPDATE_CRON"')"
+  assert_eq "$chosen" "$TMP/bin/update_cron"
+}
+
+# The 6.x-only path is what shipped, and it applies no schedule at all on 7.x.
+test_shipped_candidates_cover_unraid_6_and_7() {
+  local paths
+  paths="$(lib_var "" '"${UPDATE_CRON_PATHS[*]}"')"
+  assert_contains "$paths" "/usr/local/sbin/update_cron"
+  assert_contains "$paths" "/usr/local/emhttp/webGui/scripts/update_cron"
+}
+
+test_missing_update_cron_names_every_path_tried() {
+  write_cfg
+  local out status
+  out="$(UPDATE_CRON= UPDATE_CRON_PATHS="/nonexistent/a /nonexistent/b" cron_apply 2>&1)"
+  status=$?
+  assert_status "$status" 1
+  assert_contains "$out" "/nonexistent/a"
+  assert_contains "$out" "/nonexistent/b"
+}
+
 test_invalid_custom_cron_is_rejected() {
   write_cfg SCHEDULE=custom CUSTOM_CRON="not a cron line"
   local out status
