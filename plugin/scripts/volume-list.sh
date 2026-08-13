@@ -8,7 +8,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 docker_root() {
   local root
-  root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"
+  root="$(timeout "$CMD_TIMEOUT" docker info --format '{{.DockerRootDir}}' 2>/dev/null)"
   [[ -n "$root" ]] || root="/var/lib/docker"
   printf '%s' "$root"
 }
@@ -24,7 +24,9 @@ volume_size() { # docker-root name
     return 0
   fi
   local bytes status
-  bytes="$(du -sb "$path" 2>/dev/null | awk '{print $1}')"
+  # A volume on a spun-down or failing disk can make du block indefinitely;
+  # reporting it as unreadable beats hanging the whole listing.
+  bytes="$(timeout "$CMD_TIMEOUT" du -sb "$path" 2>/dev/null | awk '{print $1}')"
   status=$?
   if [[ "$status" -eq 0 && "$bytes" =~ ^[0-9]+$ ]]; then
     printf '%s' "$bytes"

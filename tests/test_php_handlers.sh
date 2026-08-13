@@ -42,3 +42,27 @@ test_handlers_never_call_docker_directly() {
     assert_not_contains "$content" "docker "
   done < <(handlers)
 }
+
+page() {
+  cat "$REPO_ROOT/plugin/DockerCleanup.page"
+}
+
+# Unraid's markdown renderer merged the two forms on a real 7.3 server, so
+# FormData(form) picked up a duplicate csrf_token — and would just as easily
+# have dropped one. Bodies are built from named fields instead.
+test_page_never_scrapes_a_form_for_a_request_body() {
+  assert_not_contains "$(page)" "new FormData("
+}
+
+test_page_renders_no_csrf_inputs_into_the_markup() {
+  local hits
+  hits="$(grep -nE '<input[^>]*csrf_token' "$REPO_ROOT/plugin/DockerCleanup.page" || true)"
+  [[ -z "$hits" ]] || fail "csrf inputs must be appended by script, not rendered: $hits"
+}
+
+# A proxy's 504 page and the webGui login page are both HTML, and both landed
+# verbatim in the status line before this check existed.
+test_page_does_not_print_a_raw_response_body_as_status() {
+  assert_not_contains "$(page)" "textContent = text.trim()"
+  assert_contains "$(page)" "dcReadReply"
+}

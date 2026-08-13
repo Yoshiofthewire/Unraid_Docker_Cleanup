@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.cleanup">
 <!ENTITY author    "Yoshiofthewire">
-<!ENTITY version   "2026.08.12.1">
-<!ENTITY md5       "36040771081afc2d0c326c26844259d4">
+<!ENTITY version   "2026.08.12.2">
+<!ENTITY md5       "0c73dea08e238e2e7ec606567608d161">
 <!ENTITY launch    "Settings/DockerCleanup">
 <!ENTITY repo      "https://github.com/Yoshiofthewire/Unraid_Docker_Cleanup">
 <!ENTITY gitURL    "&repo;/releases/download/&version;">
@@ -22,6 +22,14 @@
 
 <CHANGES>
 ###&version;
+- Fix: errors from a proxy or an expired session no longer print a raw HTML
+  page into the settings status line.
+- Fix: build request bodies from named fields, so the webGui's markdown
+  renderer restructuring the page cannot drop or duplicate the CSRF token.
+- Fix: time-bound `docker info` and `du` so an unresponsive daemon or disk
+  fails the request instead of hanging it.
+
+###2026.08.12.1
 - Fix: the schedule was never applied on Unraid 7.x. update_cron moved to
   /usr/local/sbin; both locations are now probed, and a missing one is
   reported instead of passing silently.

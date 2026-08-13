@@ -14,6 +14,20 @@ test_runs_exactly_the_specified_command() {
   assert_contains "$(stub_log)" "docker image prune -a -f"
 }
 
+# A run started from the web UI holds a php-fpm worker for as long as the
+# script runs, so an unresponsive daemon must not stall it indefinitely.
+test_a_hung_docker_daemon_gives_up_instead_of_blocking() {
+  write_cfg
+  local start elapsed out status
+  start="$SECONDS"
+  out="$(STUB_DOCKER_INFO_HANG=30 CMD_TIMEOUT=1 prune 2>&1)"
+  status=$?
+  elapsed=$(( SECONDS - start ))
+  assert_status "$status" 0
+  assert_contains "$out" "Docker is not running"
+  (( elapsed < 10 )) || fail "took ${elapsed}s — the timeout never fired"
+}
+
 test_never_touches_volumes() {
   write_cfg
   prune >/dev/null 2>&1

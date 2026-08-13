@@ -26,6 +26,9 @@ if [[ -z "$UPDATE_CRON" ]]; then
 fi
 NOTIFY_BIN="${NOTIFY_BIN:-/usr/local/emhttp/webGui/scripts/notify}"
 LOG_MAX_BYTES="${LOG_MAX_BYTES:-1048576}"
+# Probes run from a web request. A wedged daemon or an unresponsive disk must
+# fail here rather than hold a php-fpm worker until nginx gives up on it.
+CMD_TIMEOUT="${CMD_TIMEOUT:-15}"
 
 # Config defaults. load_cfg overwrites these from the config file.
 export ENABLED="no"
@@ -103,7 +106,7 @@ write_lastrun() { # status message
 
 docker_available() {
   command -v docker >/dev/null 2>&1 || return 1
-  docker info >/dev/null 2>&1
+  timeout "$CMD_TIMEOUT" docker info >/dev/null 2>&1
 }
 
 human_bytes() { # bytes

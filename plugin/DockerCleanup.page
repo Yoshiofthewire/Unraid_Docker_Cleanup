@@ -18,7 +18,6 @@ $csrf = $var['csrf_token'] ?? '';
 </style>
 
 <form id="dc_settings" markdown="1" onsubmit="return false">
-<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
 
 Enable scheduled cleanup:
 : <select name="ENABLED" id="dc_enabled">
@@ -108,7 +107,6 @@ Last run:
 
 <form id="dc_runform" method="POST"
       action="/plugins/docker.cleanup/include/run.php" target="dc_output_frame">
-  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
 </form>
 <iframe id="dc_output" name="dc_output_frame" class="dc-hidden" title="Prune output"></iframe>
 
@@ -124,6 +122,30 @@ Last run:
 
 <script>
 const DC_CSRF = <?= json_encode((string)$csrf) ?>;
+const DC_FIELDS = <?= json_encode(array_keys(dc_defaults())) ?>;
+
+// Unraid's markdown renderer restructures this page's HTML, and has been seen
+// merging the two forms — so a request body is built from named fields and
+// DC_CSRF, never scraped out of a form element whose membership can shift.
+function dcBody(pairs) {
+  const body = new URLSearchParams();
+  body.set('csrf_token', DC_CSRF);
+  for (const [key, value] of pairs) body.append(key, value);
+  return body;
+}
+
+// Only our own handlers reply in text/plain. A proxy error page or the webGui
+// login page arrives as HTML, and printing that into a status line reads as
+// gibberish — report what actually happened instead.
+async function dcReadReply(res) {
+  const text = (await res.text()).trim();
+  if (!(res.headers.get('content-type') || '').startsWith('text/plain')) {
+    return res.redirected
+      ? 'Your session expired. Reload the page and sign in again.'
+      : `Unexpected reply from the server (HTTP ${res.status}). Reload the page and try again.`;
+  }
+  return text.length > 300 ? text.slice(0, 300) + '…' : text;
+}
 
 function dcShowScheduleRows() {
   const scheduleEl = document.getElementById('dc_schedule');
@@ -163,14 +185,17 @@ async function dcRefreshLastRun() {
 
 document.getElementById('dc_schedule').addEventListener('change', dcShowScheduleRows);
 
-document.getElementById('dc_save').addEventListener('click', async () => {
+document.getElementById('dc_save').addEventListener('click', async (event) => {
+  event.preventDefault();
   const status = document.getElementById('dc_status');
   status.textContent = 'Saving…';
   try {
-    const body = new FormData(document.getElementById('dc_settings'));
+    const body = dcBody(DC_FIELDS
+      .map((name) => [name, document.querySelector(`[name="${name}"]`)])
+      .filter(([, el]) => el)
+      .map(([name, el]) => [name, el.value]));
     const res = await fetch('/plugins/docker.cleanup/include/save.php', { method: 'POST', body });
-    const text = await res.text();
-    status.textContent = text.trim();
+    status.textContent = await dcReadReply(res);
     if (res.ok) {
       dcRefreshLastRun();
     } else {
@@ -191,9 +216,20 @@ document.getElementById('dc_save').addEventListener('click', async () => {
 
 document.getElementById('dc_run').addEventListener('click', () => {
   const frame = document.getElementById('dc_output');
+  const form = document.getElementById('dc_runform');
+  // Appended here rather than rendered into the markup: appendChild guarantees
+  // the token is a member of this form whatever the renderer did to the page.
+  let token = form.querySelector('input[name="csrf_token"]');
+  if (!token) {
+    token = document.createElement('input');
+    token.type = 'hidden';
+    token.name = 'csrf_token';
+    form.appendChild(token);
+  }
+  token.value = DC_CSRF;
   frame.classList.remove('dc-hidden');
   frame.addEventListener('load', dcRefreshLastRun, { once: true });
-  document.getElementById('dc_runform').submit();
+  form.submit();
 });
 
 function dcEscapeHtml(s) {
@@ -214,9 +250,7 @@ function dcVolumeRow(v) {
 }
 
 document.getElementById('dc_volumes').addEventListener('click', async () => {
-  const body = new FormData();
-  body.append('csrf_token', DC_CSRF);
-  body.append('action', 'list');
+  const body = dcBody([['action', 'list']]);
 
   let data;
   try {
@@ -254,10 +288,7 @@ document.getElementById('dc_volumes').addEventListener('click', async () => {
     const confirmBtn = document.querySelector('.sweet-alert button.confirm');
     if (confirmBtn) confirmBtn.disabled = true;
 
-    const rm = new FormData();
-    rm.append('csrf_token', DC_CSRF);
-    rm.append('action', 'remove');
-    for (const name of selected) rm.append('names[]', name);
+    const rm = dcBody([['action', 'remove'], ...selected.map((name) => ['names[]', name])]);
 
     let out;
     try {
