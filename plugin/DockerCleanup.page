@@ -7,7 +7,7 @@ Icon="fa-recycle"
 require_once "/usr/local/emhttp/plugins/docker.cleanup/include/config.php";
 $cfg  = dc_read_cfg();
 $last = dc_lastrun();
-$csrf = $var['csrf_token'] ?? '';
+$csrf = dc_csrf_token();
 ?>
 <style>
   .dc-hidden { display: none; }
@@ -16,6 +16,12 @@ $csrf = $var['csrf_token'] ?? '';
   .dc-vol-list label { display: block; padding: 2px 0; }
   .dc-vol-list label.dc-disabled { opacity: 0.5; }
 </style>
+
+<?php if ($csrf === ''): ?>
+> **No security token is available, so every button on this page will be
+> rejected.** Reload the page. If it persists, `/var/local/emhttp/var.ini`
+> has no `csrf_token` entry.
+<?php endif ?>
 
 <form id="dc_settings" markdown="1" onsubmit="return false">
 

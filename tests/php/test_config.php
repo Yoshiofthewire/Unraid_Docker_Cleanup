@@ -88,6 +88,17 @@ check('csrf fails with a wrong token', dc_csrf_ok() === false);
 $_POST['csrf_token'] = 'right';
 check('csrf succeeds with a matching token', dc_csrf_ok() === true);
 
+// The page renders this token into the request bodies its buttons send. A
+// blank one leaves every button on the page rejected by dc_csrf_ok(), so the
+// var.ini fallback has to work with $var unpopulated — which is how the
+// webGui renders the page.
+$var = null;
+$varIni = "$tmp/var.ini";
+file_put_contents($varIni, "csrf_token=\"FROMVARINI\"\n");
+check('csrf token falls back to var.ini', dc_csrf_token($varIni) === 'FROMVARINI');
+$var = null;
+check('csrf token is empty when var.ini is absent', dc_csrf_token("$tmp/absent.ini") === '');
+
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);
 

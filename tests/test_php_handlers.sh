@@ -66,3 +66,10 @@ test_page_does_not_print_a_raw_response_body_as_status() {
   assert_not_contains "$(page)" "textContent = text.trim()"
   assert_contains "$(page)" "dcReadReply"
 }
+
+# Reading $var directly renders a blank token whenever the webGui has not
+# populated that global, which silently breaks every button on the page.
+test_page_reads_the_token_through_the_shared_helper() {
+  assert_not_contains "$(page)" 'csrf_token'"'"']'
+  assert_contains "$(page)" 'dc_csrf_token()'
+}

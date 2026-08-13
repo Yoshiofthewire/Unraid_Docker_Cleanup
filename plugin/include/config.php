@@ -50,19 +50,28 @@ function dc_write_cfg(array $cfg, string $path): bool {
     return file_put_contents($path, $out) !== false;
 }
 
-function dc_csrf_ok(): bool {
+// The one place the token is read. The settings page used to read $var
+// directly, which is empty unless the webGui happens to have populated that
+// global — so the page rendered a blank token while this file's fallback
+// found the real one, and every POST was rejected.
+function dc_csrf_token(string $varIni = '/var/local/emhttp/var.ini'): string {
     global $var;
-    if (!isset($var['csrf_token']) && is_file('/var/local/emhttp/var.ini')) {
-        $var = @parse_ini_file('/var/local/emhttp/var.ini') ?: [];
+    if (!isset($var['csrf_token']) && is_file($varIni)) {
+        $var = @parse_ini_file($varIni) ?: [];
     }
-    if (empty($var['csrf_token'])) {
+    return (string)($var['csrf_token'] ?? '');
+}
+
+function dc_csrf_ok(): bool {
+    $expected = dc_csrf_token();
+    if ($expected === '') {
         return false;   // fail closed
     }
     // The token must only ever be read from the POST body: accepting it from
     // the query string would let it leak into logs, history, and Referer.
     $posted = $_POST['csrf_token'] ?? '';
     $token = is_string($posted) ? $posted : '';
-    return hash_equals((string)$var['csrf_token'], $token);
+    return hash_equals($expected, $token);
 }
 
 function dc_require_csrf(): void {
